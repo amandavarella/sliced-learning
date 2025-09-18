@@ -1,10 +1,36 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 const defaultState = {
   training: null,
   activeIndex: 0,
   completed: [],
+};
+
+const normalizeCompleted = (segments = [], completed = []) => {
+  return segments.map((_, index) => Boolean(completed[index]));
+};
+
+const clampActiveIndex = (activeIndex = 0, segmentsLength = 0) => {
+  if (!Number.isInteger(activeIndex)) {
+    return 0;
+  }
+  if (!segmentsLength) {
+    return 0;
+  }
+  return Math.min(Math.max(activeIndex, 0), Math.max(segmentsLength - 1, 0));
+};
+
+const arraysEqual = (left = [], right = []) => {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
 };
 
 const timeLabel = (seconds) => {
@@ -98,6 +124,9 @@ function App() {
   const [{ training, activeIndex, completed }, setTrainingState] = useState(
     defaultState,
   );
+  const [copyStatus, setCopyStatus] = useState("");
+  const hydratingRef = useRef(false);
+  const lastPersistRef = useRef(null);
 
   const activeSegment = useMemo(() => {
     if (!training) {
@@ -105,6 +134,48 @@ function App() {
     }
     return training.segments[activeIndex];
   }, [activeIndex, training]);
+
+  const hydrateTraining = useCallback(
+    (incomingTraining, sourceValue) => {
+      if (!incomingTraining) {
+        return;
+      }
+
+      const segments = Array.isArray(incomingTraining.segments)
+        ? incomingTraining.segments
+        : [];
+      const normalizedCompleted = normalizeCompleted(
+        segments,
+        incomingTraining.progress?.completed,
+      );
+      const normalizedActiveIndex = clampActiveIndex(
+        incomingTraining.progress?.activeIndex,
+        segments.length,
+      );
+
+      const hydratedTraining = {
+        ...incomingTraining,
+        progress: {
+          completed: normalizedCompleted,
+          activeIndex: normalizedActiveIndex,
+        },
+      };
+
+      hydratingRef.current = true;
+      setTrainingState({
+        training: hydratedTraining,
+        activeIndex: normalizedActiveIndex,
+        completed: normalizedCompleted,
+      });
+
+      if (sourceValue) {
+        setUrl(sourceValue);
+      }
+
+      setCopyStatus("");
+    },
+    [setTrainingState, setUrl, setCopyStatus],
+  );
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -117,12 +188,13 @@ function App() {
     try {
       setError("");
       setLoading(true);
+      const trimmedUrl = url.trim();
       const response = await fetch("/api/process", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: trimmedUrl }),
       });
 
       if (!response.ok) {
@@ -131,11 +203,7 @@ function App() {
       }
 
       const payload = await response.json();
-      setTrainingState({
-        training: payload,
-        activeIndex: 0,
-        completed: payload.segments.map(() => false),
-      });
+      hydrateTraining(payload, trimmedUrl);
     } catch (requestError) {
       setTrainingState(defaultState);
       setError(requestError.message || "Unable to process the URL.");
@@ -150,17 +218,31 @@ function App() {
     }
 
     setTrainingState((previous) => {
+      if (!previous.training) {
+        return previous;
+      }
+
       const nextCompleted = [...previous.completed];
       nextCompleted[previous.activeIndex] = true;
       const isLast =
         previous.activeIndex === previous.training.segments.length - 1;
+      const nextActiveIndex = isLast
+        ? previous.activeIndex
+        : previous.activeIndex + 1;
+
+      const nextTraining = {
+        ...previous.training,
+        progress: {
+          completed: nextCompleted,
+          activeIndex: nextActiveIndex,
+        },
+      };
 
       return {
         ...previous,
+        training: nextTraining,
         completed: nextCompleted,
-        activeIndex: isLast
-          ? previous.activeIndex
-          : previous.activeIndex + 1,
+        activeIndex: nextActiveIndex,
       };
     });
   };
@@ -172,6 +254,15 @@ function App() {
 
     setTrainingState((previous) => ({
       ...previous,
+      training: previous.training
+        ? {
+            ...previous.training,
+            progress: {
+              completed: previous.completed,
+              activeIndex: index,
+            },
+          }
+        : previous.training,
       activeIndex: index,
     }));
   };
@@ -180,7 +271,170 @@ function App() {
     setTrainingState(defaultState);
     setUrl("");
     setError("");
+    setCopyStatus("");
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get("share");
+    const source = params.get("source");
+
+    if (!shareId || !source) {
+      return;
+    }
+
+    const fetchSharedTraining = async () => {
+      try {
+        setError("");
+        setLoading(true);
+        const response = await fetch(
+          `/api/training/${shareId}?source=${encodeURIComponent(source)}`,
+        );
+
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.error || "Unable to load the shared training.");
+        }
+
+        const payload = await response.json();
+        hydrateTraining(payload, source);
+      } catch (shareError) {
+        setTrainingState(defaultState);
+        setError(shareError.message || "Unable to load the shared training.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSharedTraining();
+  }, [hydrateTraining]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const nextUrl = new URL(window.location.href);
+
+    if (training?.shareId && training?.sourceUrl) {
+      nextUrl.searchParams.set("share", training.shareId);
+      nextUrl.searchParams.set("source", training.sourceUrl);
+    } else {
+      nextUrl.searchParams.delete("share");
+      nextUrl.searchParams.delete("source");
+    }
+
+    window.history.replaceState({}, "", nextUrl.toString());
+  }, [training]);
+
+  useEffect(() => {
+    if (!training?.shareId || !training?.sourceUrl) {
+      lastPersistRef.current = null;
+      return;
+    }
+
+    if (hydratingRef.current) {
+      hydratingRef.current = false;
+      lastPersistRef.current = {
+        shareId: training.shareId,
+        completed,
+        activeIndex,
+      };
+      return;
+    }
+
+    const previous = lastPersistRef.current;
+
+    if (
+      previous &&
+      previous.shareId === training.shareId &&
+      previous.activeIndex === activeIndex &&
+      arraysEqual(previous.completed, completed)
+    ) {
+      return;
+    }
+
+    const persist = async () => {
+      try {
+        lastPersistRef.current = {
+          shareId: training.shareId,
+          completed,
+          activeIndex,
+        };
+
+        await fetch(
+          `/api/training/${training.shareId}/progress?source=${encodeURIComponent(training.sourceUrl)}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              completed,
+              activeIndex,
+            }),
+          },
+        );
+      } catch (persistError) {
+        console.error("Unable to save progress", persistError);
+      }
+    };
+
+    persist();
+  }, [activeIndex, completed, training]);
+
+  const shareLink = useMemo(() => {
+    if (!training?.shareId || !training?.sourceUrl) {
+      return "";
+    }
+
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    const shareUrl = new URL(window.location.href);
+    shareUrl.searchParams.set("share", training.shareId);
+    shareUrl.searchParams.set("source", training.sourceUrl);
+    return shareUrl.toString();
+  }, [training]);
+
+  useEffect(() => {
+    if (!copyStatus) {
+      return undefined;
+    }
+
+    const timerId = setTimeout(() => setCopyStatus(""), 2000);
+    return () => clearTimeout(timerId);
+  }, [copyStatus]);
+
+  const handleCopyShareLink = useCallback(async () => {
+    if (!shareLink) {
+      return;
+    }
+
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(shareLink);
+      } else if (
+        typeof window !== "undefined" &&
+        typeof window.prompt === "function"
+      ) {
+        window.prompt("Copy this link", shareLink);
+      }
+      setCopyStatus("Link copied");
+    } catch (copyError) {
+      console.error("Unable to copy share link", copyError);
+      setCopyStatus("Unable to copy link");
+    }
+  }, [shareLink]);
 
   const progress = useMemo(() => {
     if (!training) {
@@ -218,8 +472,29 @@ function App() {
           <div className="progress-panel">
             <div className="progress-header">
               <h2>Progress</h2>
-              <span>{progress}%</span>
+              {shareLink ? (
+                <div className="progress-actions">
+                  <button
+                    type="button"
+                    className="copy-link-button"
+                    onClick={handleCopyShareLink}
+                    aria-label="Copy share link"
+                    title="Copy share link"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M16 1H4a3 3 0 0 0-3 3v12h2V4a1 1 0 0 1 1-1h12z" />
+                      <path d="M20 5H8a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3zm1 15a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1z" />
+                    </svg>
+                  </button>
+                  <span>{progress}%</span>
+                </div>
+              ) : (
+                <span>{progress}%</span>
+              )}
             </div>
+            {copyStatus && shareLink && (
+              <p className="copy-feedback">{copyStatus}</p>
+            )}
             <div className="progress-bar">
               <div className="progress-value" style={{ width: `${progress}%` }} />
             </div>
