@@ -1,10 +1,10 @@
 import axios from "axios";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import { chunkByWordGoal } from "../utils/segmentation.js";
+import { chunkByWordGoal, chunkHtmlContent } from "../utils/segmentation.js";
 
 const WORDS_PER_MINUTE = 200;
-const SEGMENT_MINUTES = 3;
+const SEGMENT_MINUTES = 2;
 const MAX_WORDS_PER_SEGMENT = WORDS_PER_MINUTE * SEGMENT_MINUTES;
 
 const fetchHtml = async (url) => {
@@ -40,23 +40,37 @@ export const processArticle = async (url) => {
     throw new Error("Unable to parse article content");
   }
 
-  const textContent = parsed.textContent || normalizeText(parsed.content || "");
-  const segments = chunkByWordGoal(textContent, MAX_WORDS_PER_SEGMENT);
-  const totalWords = segments.reduce((total, segment) => total + segment.wordCount, 0);
+  const rawHtmlContent = parsed.content || "";
+  const fallbackText = parsed.textContent || normalizeText(rawHtmlContent);
+  const htmlSegments = chunkHtmlContent(rawHtmlContent, MAX_WORDS_PER_SEGMENT);
+
+  const baseSegments = htmlSegments.length
+    ? htmlSegments
+    : chunkByWordGoal(fallbackText, MAX_WORDS_PER_SEGMENT).map((segment) => ({
+        html: null,
+        text: segment.text,
+        wordCount: segment.wordCount,
+      }));
+
+  const totalWords = baseSegments.reduce(
+    (total, segment) => total + segment.wordCount,
+    0,
+  );
 
   return {
     type: "article",
     title: parsed.title || dom.window.document.title || "Article",
     sourceUrl: url,
     segmentMinutes: SEGMENT_MINUTES,
-    totalSegments: segments.length,
+    totalSegments: baseSegments.length,
     totalWords,
-    segments: segments.map((segment, index) => ({
+    segments: baseSegments.map((segment, index) => ({
       id: `segment-${index + 1}`,
       label: `Section ${index + 1}`,
       wordCount: segment.wordCount,
       estimatedMinutes: Math.max(1, Math.round(segment.wordCount / WORDS_PER_MINUTE)),
       text: segment.text,
+      html: segment.html,
     })),
   };
 };
