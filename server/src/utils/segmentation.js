@@ -1,4 +1,27 @@
+import { JSDOM } from "jsdom";
+
 const WORD_PATTERN = /\s+/g;
+const FORBIDDEN_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT"]);
+const NODE_TYPE = {
+  ELEMENT: 1,
+  TEXT: 3,
+  COMMENT: 8,
+  DOCUMENT_FRAGMENT: 11,
+};
+const WRAPPABLE_CONTAINER_TAGS = new Set(["DIV", "ARTICLE", "SECTION", "MAIN"]);
+
+const escapeHtml = (value) => {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+};
+
+const collapseWhitespace = (value) => {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+};
 
 const splitIntoParagraphs = (text) => {
   return text
@@ -12,6 +35,158 @@ const wordsIn = (text) => {
     return 0;
   }
   return text.trim().split(WORD_PATTERN).filter(Boolean).length;
+};
+
+const shouldSkipNode = (node) => {
+  if (!node) {
+    return true;
+  }
+
+  if (node.nodeType === NODE_TYPE.COMMENT) {
+    return true;
+  }
+
+  if (node.nodeType === NODE_TYPE.TEXT) {
+    return !node.textContent || !node.textContent.trim();
+  }
+
+  if (node.nodeType === NODE_TYPE.ELEMENT) {
+    return FORBIDDEN_TAGS.has(node.nodeName);
+  }
+
+  return true;
+};
+
+const serializeNode = (node) => {
+  if (!node) {
+    return "";
+  }
+
+  if (node.nodeType === NODE_TYPE.TEXT) {
+    return escapeHtml(node.textContent);
+  }
+
+  if (node.nodeType === NODE_TYPE.ELEMENT) {
+    if (FORBIDDEN_TAGS.has(node.nodeName)) {
+      return "";
+    }
+    return node.outerHTML || "";
+  }
+
+  if (node.nodeType === NODE_TYPE.DOCUMENT_FRAGMENT) {
+    return Array.from(node.childNodes)
+      .map((child) => serializeNode(child))
+      .join("");
+  }
+
+  return "";
+};
+
+const unwrapContainer = (node) => {
+  let current = node;
+  while (
+    current?.childNodes?.length === 1 &&
+    current.firstChild.nodeType === NODE_TYPE.ELEMENT &&
+    WRAPPABLE_CONTAINER_TAGS.has(current.firstChild.nodeName)
+  ) {
+    current = current.firstChild;
+  }
+
+  return current;
+};
+
+export const chunkHtmlContent = (html, maxWordsPerSegment) => {
+  if (!html || !html.trim()) {
+    return [];
+  }
+
+  const dom = new JSDOM(`<body>${html}</body>`);
+  const { document } = dom.window;
+  const root = unwrapContainer(document.body);
+
+  const segments = [];
+  let currentHtmlParts = [];
+  let currentTextParts = [];
+  let currentWordCount = 0;
+  
+  const pushSegment = () => {
+    if (!currentHtmlParts.length) {
+      return;
+    }
+
+    segments.push({
+      html: currentHtmlParts.join(""),
+      text: collapseWhitespace(currentTextParts.join(" ")),
+      wordCount: currentWordCount,
+    });
+
+    currentHtmlParts = [];
+    currentTextParts = [];
+    currentWordCount = 0;
+  };
+
+  const appendChildren = (parent) => {
+    if (!parent?.childNodes) {
+      return;
+    }
+
+    Array.from(parent.childNodes).forEach((child) => {
+      if (child.nodeType === NODE_TYPE.TEXT && (!child.textContent || !child.textContent.trim())) {
+        return;
+      }
+      appendNode(child);
+    });
+  };
+
+  const appendNode = (node) => {
+    if (shouldSkipNode(node)) {
+      return;
+    }
+
+    const serialized = serializeNode(node);
+    if (!serialized) {
+      return;
+    }
+
+    const nodeTextContent = node.textContent || "";
+    const nodeWordCount = wordsIn(nodeTextContent);
+
+    if (nodeWordCount > maxWordsPerSegment) {
+      if (node.nodeType === NODE_TYPE.ELEMENT) {
+        appendChildren(node);
+        return;
+      }
+
+      if (currentHtmlParts.length) {
+        pushSegment();
+      }
+
+      segments.push({
+        html: serialized,
+        text: collapseWhitespace(nodeTextContent),
+        wordCount: nodeWordCount,
+      });
+      return;
+    }
+
+    if (currentWordCount && currentWordCount + nodeWordCount > maxWordsPerSegment) {
+      pushSegment();
+    }
+
+    currentHtmlParts.push(serialized);
+
+    if (nodeTextContent.trim()) {
+      currentTextParts.push(nodeTextContent);
+    }
+
+    currentWordCount += nodeWordCount;
+  };
+
+  appendChildren(root);
+
+  pushSegment();
+
+  return segments;
 };
 
 const toSegment = (parts, wordCount) => ({
