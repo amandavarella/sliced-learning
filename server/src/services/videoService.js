@@ -24,6 +24,7 @@ export const processVideo = async (url) => {
   return {
     type: "video",
     title: info.videoDetails.title,
+    videoId: info.videoDetails.videoId,
     sourceUrl: url,
     segmentMinutes: SEGMENT_MINUTES,
     totalSegments: segments.length,
