@@ -463,14 +463,7 @@ function App() {
               disabled={loading}
             />
             <button type="submit" disabled={loading}>
-              {loading ? (
-                <>
-                  <span className="button-spinner" aria-hidden="true" />
-                  <span className="visually-hidden">Processing</span>
-                </>
-              ) : (
-                "Slice"
-              )}
+              {loading ? "Processing..." : "Slice"}
             </button>
           </div>
         </form>
