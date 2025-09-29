@@ -158,7 +158,11 @@ app.use((_, response) => {
   response.status(404).json({ error: "Not found" });
 });
 
-app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`Server listening on http://localhost:${PORT}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    // eslint-disable-next-line no-console
+    console.log(`Server listening on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
