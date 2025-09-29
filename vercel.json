@@ -1,0 +1,15 @@
+{
+  "framework": null,
+  "installCommand": "npm install --prefix client && npm install --prefix server",
+  "buildCommand": "npm run build --prefix client",
+  "outputDirectory": "client/dist",
+  "functions": {
+    "api/index.mjs": {
+      "includeFiles": "server/src/**"
+    }
+  },
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.mjs" },
+    { "src": "/(.*)", "dest": "/client/dist/$1" }
+  ]
+}
