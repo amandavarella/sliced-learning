@@ -45,7 +45,9 @@ body {
 
 .field-row {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
+  flex-wrap: nowrap;
 }
 
 .field-row input {
@@ -67,12 +69,9 @@ body {
   font-weight: 600;
 }
 
+
 .field-row button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  min-width: 100px;
+  flex-shrink: 0;
 }
 
 .field-row button:disabled,
@@ -81,13 +80,42 @@ body {
   cursor: not-allowed;
 }
 
-.button-spinner {
-  width: 1.1rem;
-  height: 1.1rem;
+.slice-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 1.05rem;
+  min-width: 0;
+  max-width: 100%;
+  height: 42px;
+  line-height: 1;
+  box-sizing: border-box;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+
+.slice-button-label {
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.slice-button.is-loading .slice-button-label {
+  opacity: 0;
+}
+
+.slice-button .button-spinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.9rem;
+  height: 0.9rem;
   border-radius: 50%;
   border: 2px solid rgba(248, 250, 252, 0.4);
   border-top-color: #f8fafc;
   animation: button-spin 0.75s linear infinite;
+  transform: translate(-50%, -50%);
 }
 
 .visually-hidden {

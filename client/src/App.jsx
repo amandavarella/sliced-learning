@@ -503,15 +503,16 @@ function App() {
               onChange={(event) => setUrl(event.target.value)}
               disabled={loading}
             />
-            <button type="submit" disabled={loading}>
-              {loading ? (
-                <>
-                  <span className="button-spinner" aria-hidden="true" />
-                  <span className="visually-hidden">Processing</span>
-                </>
-              ) : (
-                "Slice"
-              )}
+            <button
+              type="submit"
+              disabled={loading}
+              className={`slice-button${loading ? " is-loading" : ""}`}
+            >
+              <span className="slice-button-label">Slice</span>
+              {loading && <span className="button-spinner" aria-hidden="true" />}
+              <span className="visually-hidden">
+                {loading ? "Processing" : "Slice"}
+              </span>
             </button>
           </div>
         </form>
