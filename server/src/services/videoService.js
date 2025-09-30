@@ -25,39 +25,83 @@ const isValidYouTubeUrl = (url) => {
 };
 
 const fetchVideoMetadata = async (videoId) => {
-  // Fetch the YouTube page HTML
-  const response = await axios.get(`https://www.youtube.com/watch?v=${videoId}`, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    },
-  });
+  // Use YouTube oEmbed API - official, public, no auth required
+  const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
 
-  const html = response.data;
+  const oembedResponse = await axios.get(oembedUrl);
+  const title = oembedResponse.data.title || "YouTube Video";
 
-  // Extract title from og:title meta tag
-  const titleMatch = html.match(/<meta property="og:title" content="([^"]+)"/);
-  const title = titleMatch ? titleMatch[1] : "YouTube Video";
+  // Use noembed.com as a fallback to get duration - it's a public service that aggregates video metadata
+  try {
+    const noembedResponse = await axios.get(
+      `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`,
+      { timeout: 10000 }
+    );
 
-  // Extract duration from ytInitialPlayerResponse
-  const playerResponseMatch = html.match(
-    /var ytInitialPlayerResponse = ({.+?});/,
-  );
-  if (!playerResponseMatch) {
-    throw new Error("Could not extract video metadata");
+    if (noembedResponse.data.duration) {
+      return {
+        title,
+        videoId,
+        durationSeconds: parseInt(noembedResponse.data.duration, 10),
+      };
+    }
+  } catch (noembedError) {
+    console.warn(
+      `[videoService] Noembed failed for ${videoId}:`,
+      noembedError.message
+    );
   }
 
-  const playerResponse = JSON.parse(playerResponseMatch[1]);
-  const durationSeconds = Number.parseInt(
-    playerResponse.videoDetails.lengthSeconds,
-    10,
-  );
+  // Fallback: fetch with minimal headers to avoid bot detection
+  try {
+    const pageResponse = await axios.get(
+      `https://www.youtube.com/watch?v=${videoId}`,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+          "Accept": "text/html",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        timeout: 10000,
+      }
+    );
 
-  return {
-    title,
-    videoId,
-    durationSeconds,
-  };
+    const html = pageResponse.data;
+
+    // Try multiple patterns to extract duration
+    const patterns = [
+      /<meta property="og:video:duration" content="(\d+)"/,
+      /"lengthSeconds":"(\d+)"/,
+      /"length":"(\d+)"/,
+      /approxDurationMs[":"]+(\d+)/,
+    ];
+
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        let durationSeconds = parseInt(match[1], 10);
+        // If it's in milliseconds, convert to seconds
+        if (durationSeconds > 100000) {
+          durationSeconds = Math.floor(durationSeconds / 1000);
+        }
+        return {
+          title,
+          videoId,
+          durationSeconds,
+        };
+      }
+    }
+  } catch (pageError) {
+    console.error(
+      `[videoService] Page fetch failed for ${videoId}:`,
+      pageError.message
+    );
+  }
+
+  throw new Error(
+    "Could not extract video duration. The video may be unavailable or restricted."
+  );
 };
 
 export const processVideo = async (url) => {
