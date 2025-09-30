@@ -1,26 +1,63 @@
-import ytdl from "ytdl-core";
-import https from "https";
+import axios from "axios";
 import { buildTimingSegments } from "../utils/segmentation.js";
 
 const SEGMENT_MINUTES = 10;
 const SEGMENT_SECONDS = SEGMENT_MINUTES * 60;
 
-const REQUEST_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  Accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-  "Accept-Language": "en-US,en;q=0.9",
+const extractVideoId = (url) => {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
+    /youtube\.com\/embed\/([^&\n?#]+)/,
+    /youtube\.com\/v\/([^&\n?#]+)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
 };
 
-const AGENT = new https.Agent({ keepAlive: true });
-
 const isValidYouTubeUrl = (url) => {
-  try {
-    return ytdl.validateURL(url);
-  } catch (error) {
-    return false;
+  return extractVideoId(url) !== null;
+};
+
+const fetchVideoMetadata = async (videoId) => {
+  // Fetch the YouTube page HTML
+  const response = await axios.get(`https://www.youtube.com/watch?v=${videoId}`, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    },
+  });
+
+  const html = response.data;
+
+  // Extract title from og:title meta tag
+  const titleMatch = html.match(/<meta property="og:title" content="([^"]+)"/);
+  const title = titleMatch ? titleMatch[1] : "YouTube Video";
+
+  // Extract duration from ytInitialPlayerResponse
+  const playerResponseMatch = html.match(
+    /var ytInitialPlayerResponse = ({.+?});/,
+  );
+  if (!playerResponseMatch) {
+    throw new Error("Could not extract video metadata");
   }
+
+  const playerResponse = JSON.parse(playerResponseMatch[1]);
+  const durationSeconds = Number.parseInt(
+    playerResponse.videoDetails.lengthSeconds,
+    10,
+  );
+
+  return {
+    title,
+    videoId,
+    durationSeconds,
+  };
 };
 
 export const processVideo = async (url) => {
@@ -31,31 +68,31 @@ export const processVideo = async (url) => {
     throw new Error("Unsupported YouTube URL");
   }
 
-  let info;
+  const videoId = extractVideoId(url);
+  console.info(`[videoService] Extracted videoId=${videoId}`);
 
+  let metadata;
   try {
-    info = await ytdl.getBasicInfo(url, {
-      requestOptions: {
-        agent: AGENT,
-        headers: REQUEST_HEADERS,
-      },
-    });
+    metadata = await fetchVideoMetadata(videoId);
   } catch (error) {
-    console.error(`[videoService] Failed to fetch video info for ${url}`, error);
+    console.error(
+      `[videoService] Failed to fetch video metadata for ${url}`,
+      error,
+    );
     throw error;
   }
 
-  const durationSeconds = Number.parseInt(info.videoDetails.lengthSeconds, 10);
+  const { title, durationSeconds } = metadata;
   console.info(
-    `[videoService] Video info loaded id=${info.videoDetails.videoId} duration=${durationSeconds}s`,
+    `[videoService] Video info loaded id=${videoId} duration=${durationSeconds}s`,
   );
 
   const segments = buildTimingSegments(durationSeconds, SEGMENT_SECONDS);
 
   return {
     type: "video",
-    title: info.videoDetails.title,
-    videoId: info.videoDetails.videoId,
+    title,
+    videoId,
     sourceUrl: url,
     segmentMinutes: SEGMENT_MINUTES,
     totalSegments: segments.length,
@@ -63,7 +100,9 @@ export const processVideo = async (url) => {
     segments: segments.map((segment, index) => ({
       ...segment,
       cue: {
-        start: new Date(segment.startSeconds * 1000).toISOString().substring(11, 19),
+        start: new Date(segment.startSeconds * 1000)
+          .toISOString()
+          .substring(11, 19),
         end: new Date(segment.endSeconds * 1000).toISOString().substring(11, 19),
       },
       label: `Segment ${index + 1}`,
