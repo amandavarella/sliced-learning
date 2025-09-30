@@ -61,6 +61,8 @@ app.post("/api/process", async (request, response) => {
 
   try {
     const trimmedUrl = String(url).trim();
+
+    console.info(`[api] /api/process request url=${trimmedUrl}`);
     const payload = isYouTubeLink(trimmedUrl)
       ? await processVideo(trimmedUrl)
       : await processArticle(trimmedUrl);
@@ -80,7 +82,7 @@ app.post("/api/process", async (request, response) => {
     );
 
   } catch (error) {
-    console.error("Processing failed", error.message);
+    console.error("[api] Processing failed", error);
     response.status(500).json({
       error: "Unable to process the provided URL.",
       details: error.message,
@@ -98,6 +100,7 @@ app.get("/api/training/:id", async (request, response) => {
   }
 
   try {
+    console.info(`[api] /api/training/${id} source=${source}`);
     const payload = isYouTubeLink(source)
       ? await processVideo(source)
       : await processArticle(source);
@@ -109,7 +112,7 @@ app.get("/api/training/:id", async (request, response) => {
       }),
     );
   } catch (error) {
-    console.error("Unable to load training", error.message);
+    console.error(`Unable to load training for ${id}`, error);
     response.status(500).json({ error: "Unable to load training." });
   }
 });
