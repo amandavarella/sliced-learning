@@ -5,7 +5,10 @@
   "outputDirectory": "client/dist",
   "functions": {
     "api/index.mjs": {
-      "includeFiles": "server/src/**"
+      "includeFiles": [
+        "server/src/**",
+        "server/node_modules/**"
+      ]
     }
   },
   "routes": [
