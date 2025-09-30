@@ -24,83 +24,98 @@ const isValidYouTubeUrl = (url) => {
   return extractVideoId(url) !== null;
 };
 
+const parseDuration = (isoDuration) => {
+  // Parse ISO 8601 duration format (PT1H2M3S)
+  const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+
+  const hours = parseInt(match[1] || 0, 10);
+  const minutes = parseInt(match[2] || 0, 10);
+  const seconds = parseInt(match[3] || 0, 10);
+
+  return hours * 3600 + minutes * 60 + seconds;
+};
+
 const fetchVideoMetadata = async (videoId) => {
-  // Use YouTube oEmbed API - official, public, no auth required
-  const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+  // If YouTube Data API key is provided, use it (most reliable)
+  if (process.env.YOUTUBE_API_KEY) {
+    try {
+      console.info(`[videoService] Using YouTube Data API`);
+      const apiResponse = await axios.get(
+        `https://www.googleapis.com/youtube/v3/videos`,
+        {
+          params: {
+            part: "snippet,contentDetails",
+            id: videoId,
+            key: process.env.YOUTUBE_API_KEY,
+          },
+          timeout: 10000,
+        }
+      );
 
-  const oembedResponse = await axios.get(oembedUrl);
-  const title = oembedResponse.data.title || "YouTube Video";
-
-  // Use noembed.com as a fallback to get duration - it's a public service that aggregates video metadata
-  try {
-    const noembedResponse = await axios.get(
-      `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`,
-      { timeout: 10000 }
-    );
-
-    if (noembedResponse.data.duration) {
-      return {
-        title,
-        videoId,
-        durationSeconds: parseInt(noembedResponse.data.duration, 10),
-      };
+      if (apiResponse.data.items && apiResponse.data.items.length > 0) {
+        const item = apiResponse.data.items[0];
+        const duration = parseDuration(item.contentDetails.duration);
+        return {
+          title: item.snippet.title,
+          videoId,
+          durationSeconds: duration,
+        };
+      }
+    } catch (apiError) {
+      console.warn(
+        `[videoService] YouTube Data API failed:`,
+        apiError.message
+      );
+      // Fall through to other methods
     }
-  } catch (noembedError) {
-    console.warn(
-      `[videoService] Noembed failed for ${videoId}:`,
-      noembedError.message
-    );
   }
 
-  // Fallback: fetch with minimal headers to avoid bot detection
+  // Use YouTube oEmbed API for title
+  let title = "YouTube Video";
   try {
-    const pageResponse = await axios.get(
-      `https://www.youtube.com/watch?v=${videoId}`,
-      {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-          "Accept": "text/html",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-        timeout: 10000,
-      }
-    );
+    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+    const oembedResponse = await axios.get(oembedUrl, { timeout: 5000 });
+    title = oembedResponse.data.title || title;
+  } catch (oembedError) {
+    console.warn(`[videoService] oEmbed failed:`, oembedError.message);
+  }
 
-    const html = pageResponse.data;
+  // Try Invidious API - a free, open-source YouTube frontend
+  const invidiousInstances = [
+    "https://inv.nadeko.net",
+    "https://invidious.private.coffee",
+    "https://iv.nboeck.de",
+  ];
 
-    // Try multiple patterns to extract duration
-    const patterns = [
-      /<meta property="og:video:duration" content="(\d+)"/,
-      /"lengthSeconds":"(\d+)"/,
-      /"length":"(\d+)"/,
-      /approxDurationMs[":"]+(\d+)/,
-    ];
+  for (const instance of invidiousInstances) {
+    try {
+      console.info(`[videoService] Trying Invidious instance: ${instance}`);
+      const invidiousResponse = await axios.get(
+        `${instance}/api/v1/videos/${videoId}`,
+        { timeout: 8000 }
+      );
 
-    for (const pattern of patterns) {
-      const match = html.match(pattern);
-      if (match && match[1]) {
-        let durationSeconds = parseInt(match[1], 10);
-        // If it's in milliseconds, convert to seconds
-        if (durationSeconds > 100000) {
-          durationSeconds = Math.floor(durationSeconds / 1000);
-        }
+      if (invidiousResponse.data.lengthSeconds) {
+        const durationSeconds = parseInt(invidiousResponse.data.lengthSeconds, 10);
+        console.info(`[videoService] Invidious duration: ${durationSeconds}s`);
         return {
-          title,
+          title: invidiousResponse.data.title || title,
           videoId,
           durationSeconds,
         };
       }
+    } catch (invidiousError) {
+      console.warn(
+        `[videoService] Invidious instance ${instance} failed:`,
+        invidiousError.message
+      );
+      // Continue to next instance
     }
-  } catch (pageError) {
-    console.error(
-      `[videoService] Page fetch failed for ${videoId}:`,
-      pageError.message
-    );
   }
 
   throw new Error(
-    "Could not extract video duration. The video may be unavailable or restricted."
+    "Could not extract video duration. Please set YOUTUBE_API_KEY environment variable for reliable YouTube processing."
   );
 };
 
