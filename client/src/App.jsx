@@ -7,6 +7,45 @@ const defaultState = {
   completed: [],
 };
 
+const STORAGE_PREFIX = "sliced-learning:training:";
+
+const loadStoredProgress = (shareId) => {
+  if (typeof window === "undefined" || !shareId) {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${shareId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.error("Unable to read stored progress", error);
+    return null;
+  }
+};
+
+const saveStoredProgress = (shareId, progress) => {
+  if (typeof window === "undefined" || !shareId) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      `${STORAGE_PREFIX}${shareId}`,
+      JSON.stringify(progress),
+    );
+  } catch (error) {
+    console.error("Unable to persist progress", error);
+  }
+};
+
+const clearStoredProgress = (shareId) => {
+  if (typeof window === "undefined" || !shareId) {
+    return;
+  }
+
+  window.localStorage.removeItem(`${STORAGE_PREFIX}${shareId}`);
+};
+
 const normalizeCompleted = (segments = [], completed = []) => {
   return segments.map((_, index) => Boolean(completed[index]));
 };
@@ -144,12 +183,14 @@ function App() {
       const segments = Array.isArray(incomingTraining.segments)
         ? incomingTraining.segments
         : [];
+      const storedProgress = loadStoredProgress(incomingTraining.shareId);
+      const sourceProgress = storedProgress || incomingTraining.progress;
       const normalizedCompleted = normalizeCompleted(
         segments,
-        incomingTraining.progress?.completed,
+        sourceProgress?.completed,
       );
       const normalizedActiveIndex = clampActiveIndex(
-        incomingTraining.progress?.activeIndex,
+        sourceProgress?.activeIndex,
         segments.length,
       );
 
@@ -167,6 +208,19 @@ function App() {
         activeIndex: normalizedActiveIndex,
         completed: normalizedCompleted,
       });
+
+      lastPersistRef.current = {
+        shareId: hydratedTraining.shareId,
+        completed: normalizedCompleted,
+        activeIndex: normalizedActiveIndex,
+      };
+
+      if (hydratedTraining.shareId) {
+        saveStoredProgress(hydratedTraining.shareId, {
+          completed: normalizedCompleted,
+          activeIndex: normalizedActiveIndex,
+        });
+      }
 
       if (sourceValue) {
         setUrl(sourceValue);
@@ -268,6 +322,9 @@ function App() {
   };
 
   const handleReset = () => {
+    if (training?.shareId) {
+      clearStoredProgress(training.shareId);
+    }
     setTrainingState(defaultState);
     setUrl("");
     setError("");
@@ -358,33 +415,17 @@ function App() {
       return;
     }
 
-    const persist = async () => {
-      try {
-        lastPersistRef.current = {
-          shareId: training.shareId,
-          completed,
-          activeIndex,
-        };
-
-        await fetch(
-          `/api/training/${training.shareId}/progress?source=${encodeURIComponent(training.sourceUrl)}`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              completed,
-              activeIndex,
-            }),
-          },
-        );
-      } catch (persistError) {
-        console.error("Unable to save progress", persistError);
-      }
+    const nextPersisted = {
+      shareId: training.shareId,
+      completed,
+      activeIndex,
     };
 
-    persist();
+    lastPersistRef.current = nextPersisted;
+    saveStoredProgress(training.shareId, {
+      completed,
+      activeIndex,
+    });
   }, [activeIndex, completed, training]);
 
   const shareLink = useMemo(() => {

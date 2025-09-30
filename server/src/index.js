@@ -3,11 +3,6 @@ import cors from "cors";
 import crypto from "node:crypto";
 import { processArticle } from "./services/articleService.js";
 import { processVideo } from "./services/videoService.js";
-import {
-  saveTraining,
-  loadTraining,
-  updateTrainingProgress,
-} from "./utils/storage.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -17,29 +12,33 @@ app.use(express.json({ limit: "1mb" }));
 
 const isYouTubeLink = (url) => /(youtube\.com|youtu\.be)/i.test(url);
 
-const buildResponsePayload = (record, request) => {
-  const segments = Array.isArray(record.payload?.segments)
-    ? record.payload.segments
-    : [];
-  const progress = record.progress || {};
-
+const buildResponsePayload = (
+  payload,
+  shareId,
+  sourceUrl,
+  request,
+  progressOverrides = {},
+) => {
+  const segments = Array.isArray(payload?.segments) ? payload.segments : [];
   const normalizedCompleted = segments.map((_, index) =>
-    Boolean(progress.completed?.[index]),
+    Boolean(progressOverrides.completed?.[index]),
   );
   const maxIndex = Math.max(segments.length - 1, 0);
-  const rawActiveIndex = Number.isInteger(progress.activeIndex)
-    ? progress.activeIndex
+  const rawActiveIndex = Number.isInteger(progressOverrides.activeIndex)
+    ? progressOverrides.activeIndex
     : 0;
   const normalizedActiveIndex = Math.min(
     Math.max(rawActiveIndex, 0),
     maxIndex,
   );
 
-  const shareApiUrl = `${request.protocol}://${request.get("host")}/api/training/${record.id}?source=${encodeURIComponent(record.sourceUrl)}`;
+  const shareApiUrl = `${request.protocol}://${request.get("host")}/api/training/${shareId}?source=${encodeURIComponent(
+    sourceUrl,
+  )}`;
 
   return {
-    ...record.payload,
-    shareId: record.id,
+    ...payload,
+    shareId,
     shareApiUrl,
     progress: {
       completed: normalizedCompleted,
@@ -66,22 +65,19 @@ app.post("/api/process", async (request, response) => {
       ? await processVideo(trimmedUrl)
       : await processArticle(trimmedUrl);
 
-    const progress = {
-      completed: payload.segments.map(() => false),
-      activeIndex: 0,
-    };
-
     const shareId = crypto.randomUUID();
-    const record = {
-      id: shareId,
-      sourceUrl: trimmedUrl,
-      payload,
-      progress,
-    };
-
-    await saveTraining(record.id, record.sourceUrl, record.payload, record.progress);
-
-    response.json(buildResponsePayload(record, request));
+    response.json(
+      buildResponsePayload(
+        payload,
+        shareId,
+        trimmedUrl,
+        request,
+        {
+          completed: payload.segments.map(() => false),
+          activeIndex: 0,
+        },
+      ),
+    );
 
   } catch (error) {
     console.error("Processing failed", error.message);
@@ -102,55 +98,19 @@ app.get("/api/training/:id", async (request, response) => {
   }
 
   try {
-    const record = await loadTraining(id);
+    const payload = isYouTubeLink(source)
+      ? await processVideo(source)
+      : await processArticle(source);
 
-    if (!record) {
-      response.status(404).json({ error: "Training not found." });
-      return;
-    }
-
-    if (record.sourceUrl !== source) {
-      response.status(403).json({ error: "Source URL mismatch." });
-      return;
-    }
-
-    response.json(buildResponsePayload(record, request));
+    response.json(
+      buildResponsePayload(payload, id, source, request, {
+        completed: payload.segments.map(() => false),
+        activeIndex: 0,
+      }),
+    );
   } catch (error) {
     console.error("Unable to load training", error.message);
     response.status(500).json({ error: "Unable to load training." });
-  }
-});
-
-app.patch("/api/training/:id/progress", async (request, response) => {
-  const { id } = request.params;
-  const source = String(request.query.source || "").trim();
-  const { completed, activeIndex } = request.body || {};
-
-  if (!source) {
-    response.status(400).json({ error: "A source query parameter is required." });
-    return;
-  }
-
-  try {
-    const updated = await updateTrainingProgress(id, source, {
-      completed,
-      activeIndex,
-    });
-
-    if (!updated) {
-      response.status(404).json({ error: "Training not found." });
-      return;
-    }
-
-    response.json(buildResponsePayload(updated, request));
-  } catch (error) {
-    if (error.code === "SOURCE_MISMATCH") {
-      response.status(403).json({ error: "Source URL mismatch." });
-      return;
-    }
-
-    console.error("Unable to update training", error.message);
-    response.status(500).json({ error: "Unable to update training." });
   }
 });
 
