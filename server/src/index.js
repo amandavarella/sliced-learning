@@ -1,8 +1,9 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import crypto from "node:crypto";
 import { processArticle } from "./services/articleService.js";
-import { processVideo } from "./services/videoService.js";
+import { processVideo } from "./services/videoService.v2.js";
 import {
   saveTraining,
   loadTraining,
@@ -62,7 +63,13 @@ app.post("/api/process", async (request, response) => {
 
   try {
     const trimmedUrl = String(url).trim();
-    const payload = isYouTubeLink(trimmedUrl)
+    const contentType = isYouTubeLink(trimmedUrl) ? "video" : "article";
+    console.log("[api/process] Processing request:", {
+      url: trimmedUrl,
+      contentType,
+    });
+
+    const payload = contentType === "video"
       ? await processVideo(trimmedUrl)
       : await processArticle(trimmedUrl);
 
@@ -81,10 +88,21 @@ app.post("/api/process", async (request, response) => {
 
     await saveTraining(record.id, record.sourceUrl, record.payload, record.progress);
 
+    console.log("[api/process] Processing succeeded:", {
+      contentType,
+      shareId,
+      segmentCount: payload.segments.length,
+    });
+
     response.json(buildResponsePayload(record, request));
 
   } catch (error) {
-    console.error("Processing failed", error.message);
+    console.error("[api/process] Processing failed:", {
+      url: request.body?.url,
+      errorMessage: error.message,
+      errorName: error.name,
+      errorStack: error.stack,
+    });
     response.status(500).json({
       error: "Unable to process the provided URL.",
       details: error.message,
