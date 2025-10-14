@@ -1,0 +1,11 @@
+# macOS artifacts
+.DS_Store
+**/.DS_Store
+
+# Environment files
+.env
+**/.env
+
+# Dependency directories
+node_modules/
+**/node_modules/
