@@ -247,6 +247,40 @@ function App() {
     });
   };
 
+  const handlePrevious = () => {
+    if (!training) {
+      return;
+    }
+
+    setTrainingState((previous) => {
+      if (!previous.training) {
+        return previous;
+      }
+
+      const nextActiveIndex = Math.max(previous.activeIndex - 1, 0);
+
+      if (nextActiveIndex === previous.activeIndex) {
+        return previous;
+      }
+
+      const nextTraining = {
+        ...previous.training,
+        progress: {
+          ...(previous.training.progress ?? {
+            completed: previous.completed,
+          }),
+          activeIndex: nextActiveIndex,
+        },
+      };
+
+      return {
+        ...previous,
+        training: nextTraining,
+        activeIndex: nextActiveIndex,
+      };
+    });
+  };
+
   const handleSelectSegment = (index) => {
     if (!training) {
       return;
@@ -559,6 +593,13 @@ function App() {
                 : renderVideo(activeSegment, training)}
             </section>
             <footer className="segment-footer">
+              <button
+                type="button"
+                onClick={handlePrevious}
+                disabled={!training.segments.length || activeIndex === 0}
+              >
+                Previous
+              </button>
               <button
                 type="button"
                 onClick={handleNext}
