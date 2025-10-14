@@ -30,9 +30,228 @@ const normalizeText = (htmlContent) => {
     .join("\n\n");
 };
 
+// Common lazy-loading attributes we should promote into actual src values.
+const IMAGE_SOURCE_ATTRIBUTES = [
+  "data-src",
+  "data-original",
+  "data-lazy-src",
+  "data-zoom-src",
+  "data-zoom-image",
+  "data-hi-res-src",
+  "data-srcset",
+  "data-large-image",
+  "data-image",
+  "data-url",
+];
+
+const TRANSPARENT_PLACEHOLDER_PATTERN = /R0lGODlhAQABAIAAAAAAAP\/\/\//i;
+
+const resolveImageUrl = (value, baseUrl) => {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "#" || trimmed.toLowerCase() === "about:blank") {
+    return null;
+  }
+
+  if (trimmed.startsWith("javascript:")) {
+    return null;
+  }
+
+  if (trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith("//")) {
+    return `https:${trimmed}`;
+  }
+
+  try {
+    return new URL(trimmed, baseUrl).toString();
+  } catch (error) {
+    return null;
+  }
+};
+
+const extractFirstSrcFromSrcset = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const firstCandidate = value
+    .split(",")
+    .map((candidate) => candidate.trim())
+    .filter(Boolean)
+    .shift();
+
+  if (!firstCandidate) {
+    return null;
+  }
+
+  const [urlPart] = firstCandidate.split(/\s+/);
+  return urlPart || null;
+};
+
+const normalizeSrcset = (value, baseUrl) => {
+  if (!value) {
+    return null;
+  }
+
+  const normalizedCandidates = value
+    .split(",")
+    .map((candidate) => candidate.trim())
+    .filter(Boolean)
+    .map((candidate) => {
+      const [urlPart, descriptor] = candidate.split(/\s+/, 2);
+      const resolved = resolveImageUrl(urlPart, baseUrl);
+      if (!resolved) {
+        return null;
+      }
+      return descriptor ? `${resolved} ${descriptor}` : resolved;
+    })
+    .filter(Boolean);
+
+  if (!normalizedCandidates.length) {
+    return null;
+  }
+
+  return normalizedCandidates.join(", ");
+};
+
+const normalizePictureSources = (picture, baseUrl) => {
+  if (!picture) {
+    return;
+  }
+
+  const pictureSources = picture.querySelectorAll("source");
+  pictureSources.forEach((source) => {
+    const normalizedSrcset = normalizeSrcset(source.getAttribute("srcset"), baseUrl);
+    if (normalizedSrcset) {
+      source.setAttribute("srcset", normalizedSrcset);
+    } else {
+      source.removeAttribute("srcset");
+    }
+  });
+};
+
+const applyPreferredSourceToImage = (image, baseUrl, { removeWhenMissing = false } = {}) => {
+  if (!image) {
+    return;
+  }
+
+  const preferredSource = selectPreferredSource(image, baseUrl);
+  if (preferredSource) {
+    image.setAttribute("src", preferredSource);
+  } else if (removeWhenMissing) {
+    image.removeAttribute("src");
+  }
+
+  const srcsetAttribute = image.getAttribute("srcset") || image.getAttribute("data-srcset");
+  const normalizedSrcset = normalizeSrcset(srcsetAttribute, baseUrl);
+  if (normalizedSrcset) {
+    image.setAttribute("srcset", normalizedSrcset);
+  } else if (removeWhenMissing) {
+    image.removeAttribute("srcset");
+  }
+};
+
+const hydrateDocumentImages = (document, baseUrl) => {
+  if (!document) {
+    return;
+  }
+
+  const pictures = document.querySelectorAll("picture");
+  pictures.forEach((picture) => {
+    applyPreferredSourceToImage(picture.querySelector("img"), baseUrl);
+    normalizePictureSources(picture, baseUrl);
+  });
+
+  const images = document.querySelectorAll("img");
+  images.forEach((image) => {
+    applyPreferredSourceToImage(image, baseUrl);
+  });
+};
+
+const selectPreferredSource = (image, baseUrl) => {
+  const originalSrc = image.getAttribute("src");
+
+  if (originalSrc && !TRANSPARENT_PLACEHOLDER_PATTERN.test(originalSrc)) {
+    const resolvedOriginal = resolveImageUrl(originalSrc, baseUrl);
+    if (resolvedOriginal) {
+      return resolvedOriginal;
+    }
+  }
+
+  const srcsetSrc = extractFirstSrcFromSrcset(image.getAttribute("srcset"));
+  if (srcsetSrc) {
+    const resolvedSrcset = resolveImageUrl(srcsetSrc, baseUrl);
+    if (resolvedSrcset) {
+      return resolvedSrcset;
+    }
+  }
+
+  for (const attribute of IMAGE_SOURCE_ATTRIBUTES) {
+    const attributeValue = image.getAttribute(attribute);
+    if (!attributeValue) {
+      continue;
+    }
+
+    const candidateSource = attribute.includes("srcset")
+      ? extractFirstSrcFromSrcset(attributeValue)
+      : attributeValue;
+
+    const resolved = resolveImageUrl(candidateSource, baseUrl);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  const pictureParent = image.parentElement?.nodeName === "PICTURE"
+    ? image.parentElement
+    : null;
+
+  if (pictureParent) {
+    const pictureSources = Array.from(pictureParent.querySelectorAll("source"));
+    for (const source of pictureSources) {
+      const srcsetValue = source.getAttribute("srcset");
+      const candidate = extractFirstSrcFromSrcset(srcsetValue);
+      const resolved = resolveImageUrl(candidate, baseUrl);
+      if (resolved) {
+        return resolved;
+      }
+    }
+  }
+
+  return null;
+};
+
+const normalizeArticleContent = (htmlContent, baseUrl) => {
+  if (!htmlContent || !htmlContent.trim()) {
+    return htmlContent;
+  }
+
+  const dom = new JSDOM(`<body>${htmlContent}</body>`, { url: baseUrl });
+  const { document } = dom.window;
+
+  const images = document.querySelectorAll("img");
+  images.forEach((image) => {
+    applyPreferredSourceToImage(image, baseUrl, { removeWhenMissing: true });
+  });
+
+  const pictures = document.querySelectorAll("picture");
+  pictures.forEach((picture) => {
+    normalizePictureSources(picture, baseUrl);
+  });
+
+  return document.body.innerHTML;
+};
+
 export const processArticle = async (url) => {
   const html = await fetchHtml(url);
   const dom = new JSDOM(html, { url });
+  hydrateDocumentImages(dom.window.document, url);
   const reader = new Readability(dom.window.document);
   const parsed = reader.parse();
 
@@ -41,8 +260,9 @@ export const processArticle = async (url) => {
   }
 
   const rawHtmlContent = parsed.content || "";
-  const fallbackText = parsed.textContent || normalizeText(rawHtmlContent);
-  const htmlSegments = chunkHtmlContent(rawHtmlContent, MAX_WORDS_PER_SEGMENT);
+  const normalizedHtmlContent = normalizeArticleContent(rawHtmlContent, url);
+  const fallbackText = parsed.textContent || normalizeText(normalizedHtmlContent);
+  const htmlSegments = chunkHtmlContent(normalizedHtmlContent, MAX_WORDS_PER_SEGMENT);
 
   const baseSegments = htmlSegments.length
     ? htmlSegments
