@@ -1,11 +1,10 @@
-import createDOMPurify from "isomorphic-dompurify";
+import DOMPurify from "isomorphic-dompurify";
 
 /**
  * Sanitizes HTML content while preserving images, figures, and semantic content.
  * Blocks scripts and unsafe attributes while keeping images and their metadata.
  */
 export const sanitizeHtml = (unsafeHtml) => {
-  const DOMPurify = createDOMPurify(globalThis);
 
   // Configure DOMPurify to allow images and semantic HTML
   return DOMPurify.sanitize(unsafeHtml, {
