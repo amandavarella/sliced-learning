@@ -1,0 +1,23 @@
+{
+  "name": "sliced-learning",
+  "version": "1.0.0",
+  "description": "Transform long-form content (articles and YouTube videos) into digestible, trackable training segments with embedded media and progress sharing.",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amandavarella/sliced-learning.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/amandavarella/sliced-learning/issues"
+  },
+  "homepage": "https://github.com/amandavarella/sliced-learning#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.7.2"
+  }
+}
