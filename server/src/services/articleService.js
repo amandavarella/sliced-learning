@@ -2,6 +2,7 @@ import axios from "axios";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import { chunkByWordGoal, chunkHtmlContent } from "../utils/segmentation.js";
+import { sanitizeHtml } from "../utils/sanitize.js";
 
 const WORDS_PER_MINUTE = 200;
 const SEGMENT_MINUTES = 2;
@@ -235,14 +236,80 @@ const normalizeArticleContent = (htmlContent, baseUrl) => {
   const dom = new JSDOM(`<body>${htmlContent}</body>`, { url: baseUrl });
   const { document } = dom.window;
 
+  // Handle noscript tags - extract images from noscript and replace placeholder
+  const noscriptTags = document.querySelectorAll("noscript");
+  noscriptTags.forEach((noscript) => {
+    const noscriptDom = new JSDOM(`<body>${noscript.innerHTML}</body>`);
+    const noscriptImg = noscriptDom.window.document.querySelector("img");
+
+    if (noscriptImg && noscriptImg.getAttribute("src")) {
+      // Look for preceding sibling that might be a placeholder
+      const prevSibling = noscript.previousElementSibling;
+      if (prevSibling && prevSibling.tagName === "IMG") {
+        // Replace placeholder with real image from noscript
+        prevSibling.setAttribute("src", noscriptImg.getAttribute("src"));
+        if (noscriptImg.getAttribute("srcset")) {
+          prevSibling.setAttribute("srcset", noscriptImg.getAttribute("srcset"));
+        }
+        if (noscriptImg.getAttribute("alt")) {
+          prevSibling.setAttribute("alt", noscriptImg.getAttribute("alt"));
+        }
+      } else {
+        // No placeholder, insert the image from noscript
+        const img = document.createElement("img");
+        img.setAttribute("src", noscriptImg.getAttribute("src"));
+        if (noscriptImg.getAttribute("srcset")) {
+          img.setAttribute("srcset", noscriptImg.getAttribute("srcset"));
+        }
+        if (noscriptImg.getAttribute("alt")) {
+          img.setAttribute("alt", noscriptImg.getAttribute("alt"));
+        }
+        noscript.parentNode.insertBefore(img, noscript);
+      }
+      // Remove the noscript tag
+      noscript.remove();
+    }
+  });
+
+  // Remove placeholder messages
+  const allElements = document.querySelectorAll("*");
+  allElements.forEach((element) => {
+    if (element.children.length === 0 && element.textContent) {
+      const text = element.textContent.trim();
+      if (
+        text.toLowerCase().includes("press enter") ||
+        text.toLowerCase().includes("click to view image") ||
+        text.toLowerCase().includes("view image in full size")
+      ) {
+        element.remove();
+      }
+    }
+  });
+
   const images = document.querySelectorAll("img");
   images.forEach((image) => {
     applyPreferredSourceToImage(image, baseUrl, { removeWhenMissing: true });
+
+    // Add accessibility and loading attributes
+    if (!image.getAttribute("alt")) {
+      image.setAttribute("alt", "");
+    }
+    image.removeAttribute("loading"); // Let browser decide
+    image.setAttribute("decoding", "async");
+    image.setAttribute("referrerpolicy", "no-referrer-when-downgrade");
   });
 
   const pictures = document.querySelectorAll("picture");
   pictures.forEach((picture) => {
     normalizePictureSources(picture, baseUrl);
+  });
+
+  // Remove empty figures
+  const figures = document.querySelectorAll("figure");
+  figures.forEach((figure) => {
+    if (!figure.querySelector("img")) {
+      figure.remove();
+    }
   });
 
   return document.body.innerHTML;
@@ -261,8 +328,9 @@ export const processArticle = async (url) => {
 
   const rawHtmlContent = parsed.content || "";
   const normalizedHtmlContent = normalizeArticleContent(rawHtmlContent, url);
-  const fallbackText = parsed.textContent || normalizeText(normalizedHtmlContent);
-  const htmlSegments = chunkHtmlContent(normalizedHtmlContent, MAX_WORDS_PER_SEGMENT);
+  const sanitizedHtmlContent = sanitizeHtml(normalizedHtmlContent);
+  const fallbackText = parsed.textContent || normalizeText(sanitizedHtmlContent);
+  const htmlSegments = chunkHtmlContent(sanitizedHtmlContent, MAX_WORDS_PER_SEGMENT);
 
   const baseSegments = htmlSegments.length
     ? htmlSegments
