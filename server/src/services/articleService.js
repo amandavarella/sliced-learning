@@ -46,6 +46,7 @@ const IMAGE_SOURCE_ATTRIBUTES = [
 ];
 
 const TRANSPARENT_PLACEHOLDER_PATTERN = /R0lGODlhAQABAIAAAAAAAP\/\/\//i;
+const SVG_PLACEHOLDER_PATTERN = /^data:image\/svg\+xml/i;
 
 const resolveImageUrl = (value, baseUrl) => {
   if (!value) {
@@ -178,7 +179,13 @@ const hydrateDocumentImages = (document, baseUrl) => {
 const selectPreferredSource = (image, baseUrl) => {
   const originalSrc = image.getAttribute("src");
 
-  if (originalSrc && !TRANSPARENT_PLACEHOLDER_PATTERN.test(originalSrc)) {
+  // Check if src is a real image (not a placeholder)
+  const isPlaceholder = originalSrc && (
+    TRANSPARENT_PLACEHOLDER_PATTERN.test(originalSrc) ||
+    SVG_PLACEHOLDER_PATTERN.test(originalSrc)
+  );
+
+  if (originalSrc && !isPlaceholder) {
     const resolvedOriginal = resolveImageUrl(originalSrc, baseUrl);
     if (resolvedOriginal) {
       return resolvedOriginal;
@@ -321,6 +328,13 @@ const normalizeArticleContent = (htmlContent, baseUrl) => {
     image.removeAttribute("loading"); // Let browser decide
     image.setAttribute("decoding", "async");
     image.setAttribute("referrerpolicy", "no-referrer-when-downgrade");
+
+    // Remove lazy-loading data attributes after we've processed them
+    IMAGE_SOURCE_ATTRIBUTES.forEach((attr) => {
+      image.removeAttribute(attr);
+    });
+    image.removeAttribute("data-lazyloaded");
+    image.removeAttribute("data-sizes");
   });
 
   const pictures = document.querySelectorAll("picture");
@@ -358,13 +372,28 @@ export const processArticle = async (url) => {
 
   let rawHtmlContent = parsed.content || "";
 
-  // If no images found in content but we have an OG image, prepend it as hero
-  const tempDom = new JSDOM(`<body>${rawHtmlContent}</body>`);
-  const hasImages = tempDom.window.document.querySelector("img");
-  if (!hasImages && ogImage) {
+  // Prepend OG image as hero only if it's not already in the content
+  if (ogImage) {
     const resolvedOgImage = resolveImageUrl(ogImage, url);
     if (resolvedOgImage) {
-      rawHtmlContent = `<figure><img src="${resolvedOgImage}" alt="Featured image" /></figure>${rawHtmlContent}`;
+      // Check if this image URL (or a variant) is already in the content
+      const tempDom = new JSDOM(`<body>${rawHtmlContent}</body>`);
+      const existingImages = Array.from(tempDom.window.document.querySelectorAll("img"));
+
+      // Extract the base image identifier (filename without resolution/format parameters)
+      const ogImageBase = resolvedOgImage.split('/').pop()?.split('?')[0];
+
+      const imageAlreadyExists = existingImages.some((img) => {
+        const imgSrc = img.getAttribute("src") || "";
+        const imgSrcBase = imgSrc.split('/').pop()?.split('?')[0];
+        // Check if the base filename matches (handles resize/format variations)
+        return imgSrc.includes(ogImageBase) || (imgSrcBase && ogImageBase && imgSrcBase.includes(ogImageBase.split('.')[0]));
+      });
+
+      // Only add if not already present
+      if (!imageAlreadyExists) {
+        rawHtmlContent = `<figure><img src="${resolvedOgImage}" alt="Featured image" /></figure>${rawHtmlContent}`;
+      }
     }
   }
 
