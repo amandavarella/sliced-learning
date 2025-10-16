@@ -271,6 +271,30 @@ const normalizeArticleContent = (htmlContent, baseUrl) => {
     }
   });
 
+  // Detect hero/featured images from background styles and data attributes
+  const figuresAndDivs = document.querySelectorAll("figure, div");
+  figuresAndDivs.forEach((node) => {
+    const style = node.getAttribute("style") || "";
+    const bgMatch = style.match(/url\(['"]?(.*?)['"]?\)/);
+    const dataSrc =
+      node.getAttribute("data-src") ||
+      node.getAttribute("data-bg") ||
+      node.getAttribute("data-background");
+    const src = bgMatch?.[1] || dataSrc;
+
+    // Only add image if there's a background and no existing img child
+    if (src && !node.querySelector("img")) {
+      const absolute = resolveImageUrl(src, baseUrl);
+      if (absolute) {
+        const img = document.createElement("img");
+        img.setAttribute("src", absolute);
+        img.setAttribute("alt", "");
+        // Insert at the beginning of the element
+        node.insertBefore(img, node.firstChild);
+      }
+    }
+  });
+
   // Remove placeholder messages
   const allElements = document.querySelectorAll("*");
   allElements.forEach((element) => {
@@ -318,6 +342,12 @@ const normalizeArticleContent = (htmlContent, baseUrl) => {
 export const processArticle = async (url) => {
   const html = await fetchHtml(url);
   const dom = new JSDOM(html, { url });
+
+  // Extract OpenGraph image as fallback hero image
+  const ogImage =
+    dom.window.document.querySelector('meta[property="og:image"]')?.getAttribute("content") ||
+    dom.window.document.querySelector('meta[name="twitter:image"]')?.getAttribute("content");
+
   hydrateDocumentImages(dom.window.document, url);
   const reader = new Readability(dom.window.document);
   const parsed = reader.parse();
@@ -326,7 +356,18 @@ export const processArticle = async (url) => {
     throw new Error("Unable to parse article content");
   }
 
-  const rawHtmlContent = parsed.content || "";
+  let rawHtmlContent = parsed.content || "";
+
+  // If no images found in content but we have an OG image, prepend it as hero
+  const tempDom = new JSDOM(`<body>${rawHtmlContent}</body>`);
+  const hasImages = tempDom.window.document.querySelector("img");
+  if (!hasImages && ogImage) {
+    const resolvedOgImage = resolveImageUrl(ogImage, url);
+    if (resolvedOgImage) {
+      rawHtmlContent = `<figure><img src="${resolvedOgImage}" alt="Featured image" /></figure>${rawHtmlContent}`;
+    }
+  }
+
   const normalizedHtmlContent = normalizeArticleContent(rawHtmlContent, url);
   const sanitizedHtmlContent = sanitizeHtml(normalizedHtmlContent);
   const fallbackText = parsed.textContent || normalizeText(sanitizedHtmlContent);
