@@ -313,38 +313,110 @@ function App() {
       return;
     }
 
-    const params = new URLSearchParams(window.location.search);
-    const shareId = params.get("share");
-    const source = params.get("source");
+    // Parse URL parameters - support both query and hash forms
+    const parseUrlParams = () => {
+      if (window.location.hash.includes("?")) {
+        return new URLSearchParams(window.location.hash.split("?")[1]);
+      }
+      return new URLSearchParams(window.location.search);
+    };
 
-    if (!shareId || !source) {
+    const params = parseUrlParams();
+
+    // NEW FORMAT: source and segment parameters (deployment-agnostic)
+    const source = params.get("source");
+    const segmentParam = params.get("segment");
+
+    // OLD FORMAT: share ID for backward compatibility
+    const shareId = params.get("share");
+
+    // Backward compatibility: migrate old share= format to new format
+    if (shareId && source) {
+      const migrateOldShareUrl = async () => {
+        try {
+          setError("");
+          setLoading(true);
+          const response = await fetch(
+            `/api/training/${shareId}?source=${encodeURIComponent(source)}`,
+          );
+
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.error || "Unable to load the shared training.");
+          }
+
+          const payload = await response.json();
+
+          // Extract current segment from the loaded data
+          const currentSegment = payload.progress?.activeIndex ?? 0;
+
+          // Redirect to new format
+          const nextUrl = new URL(window.location.href);
+          nextUrl.searchParams.delete("share");
+          nextUrl.searchParams.set("source", source);
+          nextUrl.searchParams.set("segment", String(currentSegment));
+          window.history.replaceState({}, "", nextUrl.toString());
+
+          hydrateTraining(payload, source);
+        } catch (shareError) {
+          setTrainingState(defaultState);
+          setError(shareError.message || "Unable to load the shared training.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      migrateOldShareUrl();
       return;
     }
 
-    const fetchSharedTraining = async () => {
-      try {
-        setError("");
-        setLoading(true);
-        const response = await fetch(
-          `/api/training/${shareId}?source=${encodeURIComponent(source)}`,
-        );
+    // NEW FORMAT: Process source and jump to segment
+    if (source) {
+      const processSharedContent = async () => {
+        try {
+          setError("");
+          setLoading(true);
+          const trimmedSource = source.trim();
+          const response = await fetch("/api/process", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ url: trimmedSource }),
+          });
 
-        if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.error || "Unable to load the shared training.");
+          if (!response.ok) {
+            const payload = await response.json();
+            throw new Error(payload.error || "Unexpected error");
+          }
+
+          const payload = await response.json();
+
+          // Parse and validate segment parameter
+          const requestedSegment = segmentParam ? Math.max(0, Number(segmentParam) || 0) : 0;
+          const totalSegments = payload.segments?.length || 0;
+          const validSegment = Math.min(requestedSegment, Math.max(0, totalSegments - 1));
+
+          // Override the default activeIndex with the requested segment
+          const modifiedPayload = {
+            ...payload,
+            progress: {
+              ...payload.progress,
+              activeIndex: validSegment,
+            },
+          };
+
+          hydrateTraining(modifiedPayload, trimmedSource);
+        } catch (processError) {
+          setTrainingState(defaultState);
+          setError(processError.message || "Unable to process the URL.");
+        } finally {
+          setLoading(false);
         }
+      };
 
-        const payload = await response.json();
-        hydrateTraining(payload, source);
-      } catch (shareError) {
-        setTrainingState(defaultState);
-        setError(shareError.message || "Unable to load the shared training.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSharedTraining();
+      processSharedContent();
+    }
   }, [hydrateTraining]);
 
   useEffect(() => {
@@ -354,18 +426,24 @@ function App() {
 
     const nextUrl = new URL(window.location.href);
 
-    if (training?.shareId && training?.sourceUrl) {
-      nextUrl.searchParams.set("share", training.shareId);
+    // Use new format: source and segment only (no shareId)
+    if (training?.sourceUrl) {
       nextUrl.searchParams.set("source", training.sourceUrl);
+      nextUrl.searchParams.set("segment", String(activeIndex));
+      // Clean up old format params
+      nextUrl.searchParams.delete("share");
     } else {
       nextUrl.searchParams.delete("share");
       nextUrl.searchParams.delete("source");
+      nextUrl.searchParams.delete("segment");
     }
 
     window.history.replaceState({}, "", nextUrl.toString());
-  }, [training]);
+  }, [training, activeIndex]);
 
   useEffect(() => {
+    // Keep persistence logic only if shareId exists (backward compatibility)
+    // New format doesn't require server-side persistence - progress is in URL
     if (!training?.shareId || !training?.sourceUrl) {
       lastPersistRef.current = null;
       return;
@@ -422,7 +500,7 @@ function App() {
   }, [activeIndex, completed, training]);
 
   const shareLink = useMemo(() => {
-    if (!training?.shareId || !training?.sourceUrl) {
+    if (!training?.sourceUrl) {
       return "";
     }
 
@@ -430,11 +508,15 @@ function App() {
       return "";
     }
 
-    const shareUrl = new URL(window.location.href);
-    shareUrl.searchParams.set("share", training.shareId);
-    shareUrl.searchParams.set("source", training.sourceUrl);
-    return shareUrl.toString();
-  }, [training]);
+    // Build deployment-agnostic share link with source and segment only
+    const base = `${window.location.origin}${window.location.pathname}`;
+    const params = new URLSearchParams({
+      source: training.sourceUrl,
+      segment: String(activeIndex),
+    });
+
+    return `${base}?${params.toString()}`;
+  }, [training, activeIndex]);
 
   useEffect(() => {
     if (!copyStatus) {

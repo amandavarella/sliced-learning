@@ -2,6 +2,7 @@ import axios from "axios";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import { chunkByWordGoal, chunkHtmlContent } from "../utils/segmentation.js";
+import { sanitizeHtml } from "../utils/sanitize.js";
 
 const WORDS_PER_MINUTE = 200;
 const SEGMENT_MINUTES = 2;
@@ -45,6 +46,7 @@ const IMAGE_SOURCE_ATTRIBUTES = [
 ];
 
 const TRANSPARENT_PLACEHOLDER_PATTERN = /R0lGODlhAQABAIAAAAAAAP\/\/\//i;
+const SVG_PLACEHOLDER_PATTERN = /^data:image\/svg\+xml/i;
 
 const resolveImageUrl = (value, baseUrl) => {
   if (!value) {
@@ -177,7 +179,13 @@ const hydrateDocumentImages = (document, baseUrl) => {
 const selectPreferredSource = (image, baseUrl) => {
   const originalSrc = image.getAttribute("src");
 
-  if (originalSrc && !TRANSPARENT_PLACEHOLDER_PATTERN.test(originalSrc)) {
+  // Check if src is a real image (not a placeholder)
+  const isPlaceholder = originalSrc && (
+    TRANSPARENT_PLACEHOLDER_PATTERN.test(originalSrc) ||
+    SVG_PLACEHOLDER_PATTERN.test(originalSrc)
+  );
+
+  if (originalSrc && !isPlaceholder) {
     const resolvedOriginal = resolveImageUrl(originalSrc, baseUrl);
     if (resolvedOriginal) {
       return resolvedOriginal;
@@ -235,14 +243,111 @@ const normalizeArticleContent = (htmlContent, baseUrl) => {
   const dom = new JSDOM(`<body>${htmlContent}</body>`, { url: baseUrl });
   const { document } = dom.window;
 
+  // Handle noscript tags - extract images from noscript and replace placeholder
+  const noscriptTags = document.querySelectorAll("noscript");
+  noscriptTags.forEach((noscript) => {
+    const noscriptDom = new JSDOM(`<body>${noscript.innerHTML}</body>`);
+    const noscriptImg = noscriptDom.window.document.querySelector("img");
+
+    if (noscriptImg && noscriptImg.getAttribute("src")) {
+      // Look for preceding sibling that might be a placeholder
+      const prevSibling = noscript.previousElementSibling;
+      if (prevSibling && prevSibling.tagName === "IMG") {
+        // Replace placeholder with real image from noscript
+        prevSibling.setAttribute("src", noscriptImg.getAttribute("src"));
+        if (noscriptImg.getAttribute("srcset")) {
+          prevSibling.setAttribute("srcset", noscriptImg.getAttribute("srcset"));
+        }
+        if (noscriptImg.getAttribute("alt")) {
+          prevSibling.setAttribute("alt", noscriptImg.getAttribute("alt"));
+        }
+      } else {
+        // No placeholder, insert the image from noscript
+        const img = document.createElement("img");
+        img.setAttribute("src", noscriptImg.getAttribute("src"));
+        if (noscriptImg.getAttribute("srcset")) {
+          img.setAttribute("srcset", noscriptImg.getAttribute("srcset"));
+        }
+        if (noscriptImg.getAttribute("alt")) {
+          img.setAttribute("alt", noscriptImg.getAttribute("alt"));
+        }
+        noscript.parentNode.insertBefore(img, noscript);
+      }
+      // Remove the noscript tag
+      noscript.remove();
+    }
+  });
+
+  // Detect hero/featured images from background styles and data attributes
+  const figuresAndDivs = document.querySelectorAll("figure, div");
+  figuresAndDivs.forEach((node) => {
+    const style = node.getAttribute("style") || "";
+    const bgMatch = style.match(/url\(['"]?(.*?)['"]?\)/);
+    const dataSrc =
+      node.getAttribute("data-src") ||
+      node.getAttribute("data-bg") ||
+      node.getAttribute("data-background");
+    const src = bgMatch?.[1] || dataSrc;
+
+    // Only add image if there's a background and no existing img child
+    if (src && !node.querySelector("img")) {
+      const absolute = resolveImageUrl(src, baseUrl);
+      if (absolute) {
+        const img = document.createElement("img");
+        img.setAttribute("src", absolute);
+        img.setAttribute("alt", "");
+        // Insert at the beginning of the element
+        node.insertBefore(img, node.firstChild);
+      }
+    }
+  });
+
+  // Remove placeholder messages
+  const allElements = document.querySelectorAll("*");
+  allElements.forEach((element) => {
+    if (element.children.length === 0 && element.textContent) {
+      const text = element.textContent.trim();
+      if (
+        text.toLowerCase().includes("press enter") ||
+        text.toLowerCase().includes("click to view image") ||
+        text.toLowerCase().includes("view image in full size")
+      ) {
+        element.remove();
+      }
+    }
+  });
+
   const images = document.querySelectorAll("img");
   images.forEach((image) => {
     applyPreferredSourceToImage(image, baseUrl, { removeWhenMissing: true });
+
+    // Add accessibility and loading attributes
+    if (!image.getAttribute("alt")) {
+      image.setAttribute("alt", "");
+    }
+    image.removeAttribute("loading"); // Let browser decide
+    image.setAttribute("decoding", "async");
+    image.setAttribute("referrerpolicy", "no-referrer-when-downgrade");
+
+    // Remove lazy-loading data attributes after we've processed them
+    IMAGE_SOURCE_ATTRIBUTES.forEach((attr) => {
+      image.removeAttribute(attr);
+    });
+    image.removeAttribute("data-lazyloaded");
+    image.removeAttribute("data-sizes");
   });
 
   const pictures = document.querySelectorAll("picture");
   pictures.forEach((picture) => {
     normalizePictureSources(picture, baseUrl);
+  });
+
+  // Remove empty figures
+  const figures = document.querySelectorAll("figure");
+  figures.forEach((figure) => {
+    if (!figure.querySelector("img")) {
+      figure.remove();
+    }
   });
 
   return document.body.innerHTML;
@@ -251,6 +356,12 @@ const normalizeArticleContent = (htmlContent, baseUrl) => {
 export const processArticle = async (url) => {
   const html = await fetchHtml(url);
   const dom = new JSDOM(html, { url });
+
+  // Extract OpenGraph image as fallback hero image
+  const ogImage =
+    dom.window.document.querySelector('meta[property="og:image"]')?.getAttribute("content") ||
+    dom.window.document.querySelector('meta[name="twitter:image"]')?.getAttribute("content");
+
   hydrateDocumentImages(dom.window.document, url);
   const reader = new Readability(dom.window.document);
   const parsed = reader.parse();
@@ -259,10 +370,37 @@ export const processArticle = async (url) => {
     throw new Error("Unable to parse article content");
   }
 
-  const rawHtmlContent = parsed.content || "";
+  let rawHtmlContent = parsed.content || "";
+
+  // Prepend OG image as hero only if it's not already in the content
+  if (ogImage) {
+    const resolvedOgImage = resolveImageUrl(ogImage, url);
+    if (resolvedOgImage) {
+      // Check if this image URL (or a variant) is already in the content
+      const tempDom = new JSDOM(`<body>${rawHtmlContent}</body>`);
+      const existingImages = Array.from(tempDom.window.document.querySelectorAll("img"));
+
+      // Extract the base image identifier (filename without resolution/format parameters)
+      const ogImageBase = resolvedOgImage.split('/').pop()?.split('?')[0];
+
+      const imageAlreadyExists = existingImages.some((img) => {
+        const imgSrc = img.getAttribute("src") || "";
+        const imgSrcBase = imgSrc.split('/').pop()?.split('?')[0];
+        // Check if the base filename matches (handles resize/format variations)
+        return imgSrc.includes(ogImageBase) || (imgSrcBase && ogImageBase && imgSrcBase.includes(ogImageBase.split('.')[0]));
+      });
+
+      // Only add if not already present
+      if (!imageAlreadyExists) {
+        rawHtmlContent = `<figure><img src="${resolvedOgImage}" alt="Featured image" /></figure>${rawHtmlContent}`;
+      }
+    }
+  }
+
   const normalizedHtmlContent = normalizeArticleContent(rawHtmlContent, url);
-  const fallbackText = parsed.textContent || normalizeText(normalizedHtmlContent);
-  const htmlSegments = chunkHtmlContent(normalizedHtmlContent, MAX_WORDS_PER_SEGMENT);
+  const sanitizedHtmlContent = sanitizeHtml(normalizedHtmlContent);
+  const fallbackText = parsed.textContent || normalizeText(sanitizedHtmlContent);
+  const htmlSegments = chunkHtmlContent(sanitizedHtmlContent, MAX_WORDS_PER_SEGMENT);
 
   const baseSegments = htmlSegments.length
     ? htmlSegments
