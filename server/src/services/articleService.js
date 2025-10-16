@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import { chunkByWordGoal, chunkHtmlContent } from "../utils/segmentation.js";
 import { sanitizeHtml } from "../utils/sanitize.js";
+import { parseRichText } from "../utils/parseRichText.js";
 
 const WORDS_PER_MINUTE = 200;
 const SEGMENT_MINUTES = 2;
@@ -400,6 +401,10 @@ export const processArticle = async (url) => {
   const normalizedHtmlContent = normalizeArticleContent(rawHtmlContent, url);
   const sanitizedHtmlContent = sanitizeHtml(normalizedHtmlContent);
   const fallbackText = parsed.textContent || normalizeText(sanitizedHtmlContent);
+
+  // Parse the HTML into rich-text AST
+  const richTextNodes = await parseRichText(sanitizedHtmlContent);
+
   const htmlSegments = chunkHtmlContent(sanitizedHtmlContent, MAX_WORDS_PER_SEGMENT);
 
   const baseSegments = htmlSegments.length
@@ -415,6 +420,10 @@ export const processArticle = async (url) => {
     0,
   );
 
+  // TODO: Implement segmentation that preserves block boundaries
+  // For now, pass all richTextNodes to each segment
+  // In production, you'd want to intelligently split nodes across segments
+
   return {
     type: "article",
     title: parsed.title || dom.window.document.title || "Article",
@@ -429,6 +438,7 @@ export const processArticle = async (url) => {
       estimatedMinutes: Math.max(1, Math.round(segment.wordCount / WORDS_PER_MINUTE)),
       text: segment.text,
       html: segment.html,
+      richText: richTextNodes, // Include rich-text AST
     })),
   };
 };

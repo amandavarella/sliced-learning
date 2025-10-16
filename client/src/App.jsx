@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import { RichRenderer } from "./components/RichRenderer";
 
 const defaultState = {
   training: null,
@@ -40,6 +41,12 @@ const timeLabel = (seconds) => {
 };
 
 const renderArticle = (segment) => {
+  // Prefer rich-text rendering if available
+  if (segment?.richText && Array.isArray(segment.richText)) {
+    return <RichRenderer nodes={segment.richText} />;
+  }
+
+  // Fallback to HTML rendering
   if (segment?.html) {
     return (
       <div
@@ -49,6 +56,7 @@ const renderArticle = (segment) => {
     );
   }
 
+  // Fallback to plain text
   if (!segment?.text) {
     return null;
   }
