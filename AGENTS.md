@@ -14,3 +14,6 @@ Automated tests are not yet present; rely on linting plus manual verification. A
 
 ## Commit & Pull Request Guidelines
 Write imperative, concise commit subjects (~60 chars) that describe the change, e.g., `Add video segment progress bar`. Group related client and server edits into separate commits for easier review. PRs should include a short summary, testing notes (lint, manual URLs), and screenshots or GIFs when the UI shifts. Link back to tracker issues with `Closes #123` and call out configuration changes or new env vars explicitly.
+
+## Agent Workflow Notes
+- When the user requests a PR, always create or switch to a new branch before staging or committing changes.
