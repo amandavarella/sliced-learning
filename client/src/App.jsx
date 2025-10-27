@@ -2,6 +2,49 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { RichRenderer } from "./components/RichRenderer";
 
+const DEFAULT_TITLE = "Sliced Learning";
+const DEFAULT_DESCRIPTION = "Transform long-form content into digestible, trackable learning segments.";
+const DEFAULT_FAVICON = "/vite.svg";
+
+const upsertMetaTag = (attribute, name, content) => {
+  if (typeof document === "undefined") {
+    return;
+  }
+  if (!content) {
+    const existing = document.head.querySelector(`meta[${attribute}='${name}']`);
+    if (existing) {
+      existing.remove();
+    }
+    return;
+  }
+
+  let tag = document.head.querySelector(`meta[${attribute}='${name}']`);
+  if (!tag) {
+    tag = document.createElement("meta");
+    tag.setAttribute(attribute, name);
+    document.head.appendChild(tag);
+  }
+  tag.setAttribute("content", content);
+};
+
+const updateFavicon = (href) => {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const nextHref = href || DEFAULT_FAVICON;
+  const rels = ["icon", "shortcut icon"];
+
+  rels.forEach((rel) => {
+    let link = document.head.querySelector(`link[rel='${rel}']`);
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = rel;
+      document.head.appendChild(link);
+    }
+    link.href = nextHref;
+  });
+};
+
 const defaultState = {
   training: null,
   activeIndex: 0,
@@ -38,6 +81,108 @@ const timeLabel = (seconds) => {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes}m ${remainingSeconds}s`;
+};
+
+const PROGRESS_STORAGE_KEY = "sliced-progress";
+
+const readProgressStorage = () => {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const raw = window.localStorage.getItem(PROGRESS_STORAGE_KEY);
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch (storageError) {
+    console.warn("Unable to parse stored progress", storageError);
+  }
+
+  return {};
+};
+
+const getStoredProgress = (source) => {
+  if (!source) {
+    return null;
+  }
+
+  const storage = readProgressStorage();
+  const stored = storage[source];
+
+  if (!stored || typeof stored !== "object") {
+    return null;
+  }
+
+  const completed = Array.isArray(stored.completed)
+    ? stored.completed.map(Boolean)
+    : [];
+  const activeIndex = Number.isInteger(stored.activeIndex)
+    ? stored.activeIndex
+    : 0;
+
+  return {
+    completed,
+    activeIndex,
+  };
+};
+
+const persistStoredProgress = (source, data) => {
+  if (!source || typeof window === "undefined") {
+    return;
+  }
+
+  const storage = readProgressStorage();
+  const payload = {
+    completed: Array.isArray(data.completed)
+      ? data.completed.map(Boolean)
+      : [],
+    activeIndex: Number.isInteger(data.activeIndex)
+      ? data.activeIndex
+      : 0,
+  };
+
+  const nextStorage = {
+    ...storage,
+    [source]: payload,
+  };
+
+  try {
+    window.localStorage.setItem(
+      PROGRESS_STORAGE_KEY,
+      JSON.stringify(nextStorage),
+    );
+  } catch (storageError) {
+    console.warn("Unable to persist progress", storageError);
+  }
+};
+
+const removeStoredProgress = (source) => {
+  if (!source || typeof window === "undefined") {
+    return;
+  }
+
+  const storage = readProgressStorage();
+
+  if (!storage[source]) {
+    return;
+  }
+
+  const { [source]: _, ...nextStorage } = storage;
+
+  try {
+    window.localStorage.setItem(
+      PROGRESS_STORAGE_KEY,
+      JSON.stringify(nextStorage),
+    );
+  } catch (storageError) {
+    console.warn("Unable to remove stored progress", storageError);
+  }
 };
 
 const renderArticle = (segment) => {
@@ -135,6 +280,7 @@ function App() {
   const [copyStatus, setCopyStatus] = useState("");
   const hydratingRef = useRef(false);
   const lastPersistRef = useRef(null);
+  const lastLocalPersistRef = useRef(null);
 
   const activeSegment = useMemo(() => {
     if (!training) {
@@ -144,7 +290,9 @@ function App() {
   }, [activeIndex, training]);
 
   const hydrateTraining = useCallback(
-    (incomingTraining, sourceValue) => {
+    (incomingTraining, sourceValue, options = {}) => {
+      const { preferIncomingActiveIndex = false } = options;
+
       if (!incomingTraining) {
         return;
       }
@@ -152,14 +300,31 @@ function App() {
       const segments = Array.isArray(incomingTraining.segments)
         ? incomingTraining.segments
         : [];
-      const normalizedCompleted = normalizeCompleted(
+      let normalizedCompleted = normalizeCompleted(
         segments,
         incomingTraining.progress?.completed,
       );
-      const normalizedActiveIndex = clampActiveIndex(
+      let normalizedActiveIndex = clampActiveIndex(
         incomingTraining.progress?.activeIndex,
         segments.length,
       );
+
+      const trimmedSource = typeof sourceValue === "string" ? sourceValue.trim() : "";
+      const resolvedSourceUrl = (incomingTraining.sourceUrl || trimmedSource || "").trim();
+      const storedProgress = resolvedSourceUrl
+        ? getStoredProgress(resolvedSourceUrl)
+        : null;
+
+      if (storedProgress && !incomingTraining.shareId) {
+        normalizedCompleted = normalizeCompleted(segments, storedProgress.completed);
+
+        if (!preferIncomingActiveIndex) {
+          normalizedActiveIndex = clampActiveIndex(
+            storedProgress.activeIndex,
+            segments.length,
+          );
+        }
+      }
 
       const hydratedTraining = {
         ...incomingTraining,
@@ -169,6 +334,10 @@ function App() {
         },
       };
 
+      if (resolvedSourceUrl && !incomingTraining.sourceUrl) {
+        hydratedTraining.sourceUrl = resolvedSourceUrl;
+      }
+
       hydratingRef.current = true;
       setTrainingState({
         training: hydratedTraining,
@@ -176,8 +345,9 @@ function App() {
         completed: normalizedCompleted,
       });
 
-      if (sourceValue) {
-        setUrl(sourceValue);
+      const nextUrlValue = trimmedSource || resolvedSourceUrl;
+      if (nextUrlValue) {
+        setUrl(nextUrlValue);
       }
 
       setCopyStatus("");
@@ -310,6 +480,12 @@ function App() {
   };
 
   const handleReset = () => {
+    if (training?.sourceUrl) {
+      removeStoredProgress(training.sourceUrl);
+    }
+
+    lastLocalPersistRef.current = null;
+    hydratingRef.current = false;
     setTrainingState(defaultState);
     setUrl("");
     setError("");
@@ -365,7 +541,9 @@ function App() {
           nextUrl.searchParams.set("segment", String(currentSegment));
           window.history.replaceState({}, "", nextUrl.toString());
 
-          hydrateTraining(payload, source);
+          hydrateTraining(payload, source, {
+            preferIncomingActiveIndex: true,
+          });
         } catch (shareError) {
           setTrainingState(defaultState);
           setError(shareError.message || "Unable to load the shared training.");
@@ -414,7 +592,9 @@ function App() {
             },
           };
 
-          hydrateTraining(modifiedPayload, trimmedSource);
+          hydrateTraining(modifiedPayload, trimmedSource, {
+            preferIncomingActiveIndex: segmentParam !== null,
+          });
         } catch (processError) {
           setTrainingState(defaultState);
           setError(processError.message || "Unable to process the URL.");
@@ -448,6 +628,52 @@ function App() {
 
     window.history.replaceState({}, "", nextUrl.toString());
   }, [training, activeIndex]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const currentSource = training?.sourceUrl?.trim();
+
+    if (!currentSource) {
+      lastLocalPersistRef.current = null;
+      return;
+    }
+
+    if (training?.shareId) {
+      lastLocalPersistRef.current = null;
+      return;
+    }
+
+    if (hydratingRef.current) {
+      hydratingRef.current = false;
+      return;
+    }
+
+    const previous = lastLocalPersistRef.current;
+
+    if (
+      previous &&
+      previous.source === currentSource &&
+      previous.activeIndex === activeIndex &&
+      arraysEqual(previous.completed, completed)
+    ) {
+      return;
+    }
+
+    const payload = {
+      completed: [...completed],
+      activeIndex,
+    };
+
+    persistStoredProgress(currentSource, payload);
+    lastLocalPersistRef.current = {
+      source: currentSource,
+      completed: payload.completed,
+      activeIndex: payload.activeIndex,
+    };
+  }, [training, completed, activeIndex]);
 
   useEffect(() => {
     // Keep persistence logic only if shareId exists (backward compatibility)
@@ -506,6 +732,38 @@ function App() {
 
     persist();
   }, [activeIndex, completed, training]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const metaSource = training?.meta || null;
+    const baseTitle = metaSource?.title || training?.title || DEFAULT_TITLE;
+    const finalTitle = baseTitle === DEFAULT_TITLE
+      ? DEFAULT_TITLE
+      : `${baseTitle} | Sliced Learning`;
+
+    document.title = finalTitle;
+
+    const description = metaSource?.description || DEFAULT_DESCRIPTION;
+    const canonicalUrl = metaSource?.url || training?.sourceUrl || (typeof window !== "undefined" ? window.location.href : undefined);
+    const ogImage = metaSource?.ogImage || null;
+    const favicon = metaSource?.favicon || DEFAULT_FAVICON;
+    const socialTitle = metaSource?.title || baseTitle;
+
+    upsertMetaTag("name", "description", description);
+    upsertMetaTag("property", "og:title", socialTitle);
+    upsertMetaTag("property", "og:description", description);
+    upsertMetaTag("property", "og:url", canonicalUrl);
+    upsertMetaTag("property", "og:image", ogImage);
+    upsertMetaTag("name", "twitter:title", socialTitle);
+    upsertMetaTag("name", "twitter:description", description);
+    upsertMetaTag("name", "twitter:image", ogImage);
+    upsertMetaTag("name", "twitter:card", ogImage ? "summary_large_image" : "summary");
+
+    updateFavicon(favicon);
+  }, [training?.meta, training?.title, training?.sourceUrl]);
 
   const shareLink = useMemo(() => {
     if (!training?.sourceUrl) {
