@@ -281,6 +281,7 @@ function App() {
   const hydratingRef = useRef(false);
   const lastPersistRef = useRef(null);
   const lastLocalPersistRef = useRef(null);
+  const shouldPersistLocalRef = useRef(true);
 
   const activeSegment = useMemo(() => {
     if (!training) {
@@ -291,7 +292,12 @@ function App() {
 
   const hydrateTraining = useCallback(
     (incomingTraining, sourceValue, options = {}) => {
-      const { preferIncomingActiveIndex = false } = options;
+      const {
+        preferIncomingActiveIndex = false,
+        skipStoredProgress = false,
+      } = options;
+
+      shouldPersistLocalRef.current = !skipStoredProgress;
 
       if (!incomingTraining) {
         return;
@@ -311,11 +317,11 @@ function App() {
 
       const trimmedSource = typeof sourceValue === "string" ? sourceValue.trim() : "";
       const resolvedSourceUrl = (incomingTraining.sourceUrl || trimmedSource || "").trim();
-      const storedProgress = resolvedSourceUrl
-        ? getStoredProgress(resolvedSourceUrl)
-        : null;
+      const storedProgress = skipStoredProgress || !resolvedSourceUrl
+        ? null
+        : getStoredProgress(resolvedSourceUrl);
 
-      if (storedProgress && !incomingTraining.shareId) {
+      if (storedProgress) {
         normalizedCompleted = normalizeCompleted(segments, storedProgress.completed);
 
         if (!preferIncomingActiveIndex) {
@@ -485,6 +491,7 @@ function App() {
     }
 
     lastLocalPersistRef.current = null;
+    shouldPersistLocalRef.current = true;
     hydratingRef.current = false;
     setTrainingState(defaultState);
     setUrl("");
@@ -543,6 +550,7 @@ function App() {
 
           hydrateTraining(payload, source, {
             preferIncomingActiveIndex: true,
+            skipStoredProgress: true,
           });
         } catch (shareError) {
           setTrainingState(defaultState);
@@ -641,7 +649,7 @@ function App() {
       return;
     }
 
-    if (training?.shareId) {
+    if (!shouldPersistLocalRef.current) {
       lastLocalPersistRef.current = null;
       return;
     }
