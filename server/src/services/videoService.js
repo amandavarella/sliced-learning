@@ -1,6 +1,20 @@
 import ytdl from "ytdl-core";
 import { buildTimingSegments } from "../utils/segmentation.js";
 
+const YOUTUBE_FAVICON = "https://www.youtube.com/favicon.ico";
+
+const selectThumbnail = (thumbnails = []) => {
+  if (!Array.isArray(thumbnails)) {
+    return undefined;
+  }
+  for (const entry of thumbnails) {
+    if (entry?.url) {
+      return entry.url;
+    }
+  }
+  return undefined;
+};
+
 const SEGMENT_MINUTES = 10;
 const SEGMENT_SECONDS = SEGMENT_MINUTES * 60;
 
@@ -35,6 +49,17 @@ export const processVideo = async (url) => {
 
     const durationSeconds = Number.parseInt(info.videoDetails.lengthSeconds, 10);
     const segments = buildTimingSegments(durationSeconds, SEGMENT_SECONDS);
+    const rawDescription = info.videoDetails.shortDescription || "";
+    const firstDescriptionLine = rawDescription
+      .split(/\r?\n+/)
+      .map((line) => line.trim())
+      .find(Boolean);
+    const canonicalUrl = `https://www.youtube.com/watch?v=${info.videoDetails.videoId}`;
+
+    let description = firstDescriptionLine || undefined;
+    if (description && description.length > 240) {
+      description = `${description.substring(0, 237).trim()}...`;
+    }
 
     return {
       type: "video",
@@ -44,6 +69,13 @@ export const processVideo = async (url) => {
       segmentMinutes: SEGMENT_MINUTES,
       totalSegments: segments.length,
       durationSeconds,
+      meta: {
+        title: info.videoDetails.title,
+        description,
+        favicon: YOUTUBE_FAVICON,
+        ogImage: selectThumbnail(info.videoDetails.thumbnails),
+        url: canonicalUrl,
+      },
       segments: segments.map((segment, index) => ({
         ...segment,
         cue: {

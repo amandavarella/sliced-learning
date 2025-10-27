@@ -3,6 +3,19 @@ import { buildTimingSegments } from "../utils/segmentation.js";
 
 const SEGMENT_MINUTES = 10;
 const SEGMENT_SECONDS = SEGMENT_MINUTES * 60;
+const YOUTUBE_FAVICON = "https://www.youtube.com/favicon.ico";
+
+const thumbnailPreferenceOrder = ["maxres", "standard", "high", "medium", "default"];
+
+const selectThumbnail = (thumbnails = {}) => {
+  for (const key of thumbnailPreferenceOrder) {
+    const entry = thumbnails?.[key];
+    if (entry?.url) {
+      return entry.url;
+    }
+  }
+  return undefined;
+};
 
 /**
  * Extract YouTube video ID from various URL formats
@@ -130,6 +143,18 @@ export const processVideo = async (url) => {
     const title = videoData.snippet.title;
     const durationISO = videoData.contentDetails.duration;
     const durationSeconds = parseISO8601Duration(durationISO);
+    const rawDescription = videoData.snippet.description || "";
+    const firstDescriptionLine = rawDescription
+      .split(/\r?\n+/)
+      .map((line) => line.trim())
+      .find(Boolean);
+    const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const thumbnail = selectThumbnail(videoData.snippet.thumbnails);
+
+    let description = firstDescriptionLine || undefined;
+    if (description && description.length > 240) {
+      description = `${description.substring(0, 237).trim()}...`;
+    }
 
     console.log("[videoService] Video metadata retrieved:", {
       videoId,
@@ -152,6 +177,13 @@ export const processVideo = async (url) => {
       segmentMinutes: SEGMENT_MINUTES,
       totalSegments: segments.length,
       durationSeconds,
+      meta: {
+        title,
+        description,
+        favicon: YOUTUBE_FAVICON,
+        ogImage: thumbnail,
+        url: canonicalUrl,
+      },
       segments: segments.map((segment, index) => ({
         ...segment,
         cue: {

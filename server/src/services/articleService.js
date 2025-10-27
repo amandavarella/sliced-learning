@@ -4,6 +4,7 @@ import { Readability } from "@mozilla/readability";
 import { chunkByWordGoal, chunkHtmlContent } from "../utils/segmentation.js";
 import { sanitizeHtml } from "../utils/sanitize.js";
 import { parseRichText } from "../utils/parseRichText.js";
+import { extractDocumentMeta } from "../utils/meta.js";
 
 const WORDS_PER_MINUTE = 200;
 const SEGMENT_MINUTES = 2;
@@ -357,11 +358,10 @@ const normalizeArticleContent = (htmlContent, baseUrl) => {
 export const processArticle = async (url) => {
   const html = await fetchHtml(url);
   const dom = new JSDOM(html, { url });
+  const extractedMeta = extractDocumentMeta(dom.window.document, url);
 
   // Extract OpenGraph image as fallback hero image
-  const ogImage =
-    dom.window.document.querySelector('meta[property="og:image"]')?.getAttribute("content") ||
-    dom.window.document.querySelector('meta[name="twitter:image"]')?.getAttribute("content");
+  const ogImage = extractedMeta.ogImage;
 
   hydrateDocumentImages(dom.window.document, url);
   const reader = new Readability(dom.window.document);
@@ -424,13 +424,43 @@ export const processArticle = async (url) => {
   // For now, pass all richTextNodes to each segment
   // In production, you'd want to intelligently split nodes across segments
 
+  const meta = {
+    ...extractedMeta,
+    title: extractedMeta.title || parsed.title || dom.window.document.title || "Article",
+    url: extractedMeta.url || url,
+  };
+
+  if (!meta.description) {
+    const excerpt = parsed.excerpt?.trim();
+    if (excerpt) {
+      meta.description = excerpt;
+    } else if (fallbackText) {
+      const firstParagraph = fallbackText.split(/\n+/).find(Boolean);
+      if (firstParagraph) {
+        meta.description = firstParagraph.substring(0, 240);
+      }
+    }
+  }
+
+  if (meta.description && meta.description.length > 240) {
+    meta.description = `${meta.description.substring(0, 237).trim()}...`;
+  }
+
+  if (!meta.ogImage && ogImage) {
+    const resolvedMetaImage = resolveImageUrl(ogImage, url);
+    if (resolvedMetaImage) {
+      meta.ogImage = resolvedMetaImage;
+    }
+  }
+
   return {
     type: "article",
-    title: parsed.title || dom.window.document.title || "Article",
+    title: meta.title || "Article",
     sourceUrl: url,
     segmentMinutes: SEGMENT_MINUTES,
     totalSegments: baseSegments.length,
     totalWords,
+    meta,
     segments: baseSegments.map((segment, index) => ({
       id: `segment-${index + 1}`,
       label: `Section ${index + 1}`,
