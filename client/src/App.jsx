@@ -195,7 +195,7 @@ const renderArticle = (segment) => {
   if (segment?.html) {
     return (
       <div
-        className="article-segment-content"
+        className="prose prose-invert prose-substack mx-auto article-segment-content"
         dangerouslySetInnerHTML={{ __html: segment.html }}
       />
     );
@@ -206,9 +206,13 @@ const renderArticle = (segment) => {
     return null;
   }
 
-  return segment.text.split(/\n{2,}/).map((paragraph, index) => (
-    <p key={`${segment.id}-paragraph-${index}`}>{paragraph}</p>
-  ));
+  return (
+    <div className="prose prose-invert prose-substack mx-auto">
+      {segment.text.split(/\n{2,}/).map((paragraph, index) => (
+        <p key={`${segment.id}-paragraph-${index}`}>{paragraph}</p>
+      ))}
+    </div>
+  );
 };
 
 const renderVideo = (segment, training) => {

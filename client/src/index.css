@@ -1,16 +1,40 @@
-*, *::before, *::after {
-  box-sizing: border-box;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-html, body {
-  margin: 0;
-  padding: 0;
-}
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
 
-a {
-  color: inherit;
-}
+  html, body, #root {
+    height: 100%;
+  }
 
-button {
-  font-family: inherit;
+  body {
+    @apply bg-paper text-ink font-serif antialiased;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+
+  a {
+    color: inherit;
+    transition: color 120ms ease, text-decoration-color 120ms ease;
+  }
+
+  button {
+    font-family: inherit;
+  }
+
+  /* Subtle selection color */
+  ::selection {
+    background-color: rgba(147, 197, 253, 0.25);
+  }
 }
