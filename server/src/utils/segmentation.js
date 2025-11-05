@@ -95,6 +95,40 @@ const unwrapContainer = (node) => {
   return current;
 };
 
+/**
+ * Calculates adaptive segment size based on total article length.
+ *
+ * This prevents short, continuous articles from being unnecessarily split into
+ * multiple segments, improving reading flow and context preservation.
+ *
+ * Segmentation strategy:
+ * - Short articles (≤1500 words / ~7.5 min): Single segment - maintains complete context
+ * - Medium articles (1501-2500 words / ~7.5-12.5 min): Max 2 segments - balanced approach
+ * - Long articles (>2500 words / >12.5 min): Standard segmentation - use base threshold
+ *
+ * @param {number} totalWords - Total word count of the article
+ * @param {number} baseMaxWords - Base maximum words per segment (default threshold)
+ * @returns {number} - Adjusted maximum words per segment
+ */
+const calculateAdaptiveSegmentSize = (totalWords, baseMaxWords) => {
+  // Thresholds based on reading time at 200 WPM
+  const SHORT_ARTICLE_THRESHOLD = 1500;  // ~7.5 min read → single segment
+  const MEDIUM_ARTICLE_THRESHOLD = 2500; // ~12.5 min read → max 2 segments
+
+  // For short articles and continuous prose, don't segment at all
+  if (totalWords <= SHORT_ARTICLE_THRESHOLD) {
+    return Infinity;
+  }
+
+  // For medium-length articles, use a more generous threshold
+  if (totalWords <= MEDIUM_ARTICLE_THRESHOLD) {
+    return Math.ceil(totalWords / 2); // Split into at most 2 segments
+  }
+
+  // For longer articles, use the standard threshold
+  return baseMaxWords;
+};
+
 export const chunkHtmlContent = (html, maxWordsPerSegment) => {
   if (!html || !html.trim()) {
     return [];
@@ -103,6 +137,13 @@ export const chunkHtmlContent = (html, maxWordsPerSegment) => {
   const dom = new JSDOM(`<body>${html}</body>`);
   const { document } = dom.window;
   const root = unwrapContainer(document.body);
+
+  // Calculate total word count first to determine adaptive segmentation
+  const totalTextContent = root.textContent || "";
+  const totalWords = wordsIn(totalTextContent);
+
+  // Adjust max words per segment based on article length
+  const adaptiveMaxWords = calculateAdaptiveSegmentSize(totalWords, maxWordsPerSegment);
 
   const segments = [];
   let currentHtmlParts = [];
@@ -151,7 +192,7 @@ export const chunkHtmlContent = (html, maxWordsPerSegment) => {
     const nodeTextContent = node.textContent || "";
     const nodeWordCount = wordsIn(nodeTextContent);
 
-    if (nodeWordCount > maxWordsPerSegment) {
+    if (nodeWordCount > adaptiveMaxWords) {
       if (node.nodeType === NODE_TYPE.ELEMENT) {
         appendChildren(node);
         return;
@@ -169,7 +210,7 @@ export const chunkHtmlContent = (html, maxWordsPerSegment) => {
       return;
     }
 
-    if (currentWordCount && currentWordCount + nodeWordCount > maxWordsPerSegment) {
+    if (currentWordCount && currentWordCount + nodeWordCount > adaptiveMaxWords) {
       pushSegment();
     }
 
