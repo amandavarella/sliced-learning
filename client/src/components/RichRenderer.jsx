@@ -65,7 +65,7 @@ export function RichRenderer({ nodes }) {
   }
 
   return (
-    <div className="prose prose-invert prose-substack mx-auto">
+    <div className="prose prose-mediumReader mx-auto">
       {nodes.map((n, idx) => {
         const align = n.align ? `text-${n.align}` : "";
 

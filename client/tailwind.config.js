@@ -5,107 +5,96 @@ export default {
     extend: {
       fontFamily: {
         // Fallbacks ensure good rendering without external fonts
-        serif: ['"Source Serif Pro"', "Georgia", "Cambria", "Times New Roman", "Times", "serif"],
-        sans: ['Inter', "system-ui", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"],
-        mono: ['"JetBrains Mono"', "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
-      },
-      colors: {
-        ink: {
-          DEFAULT: "#e6e6e6", // light text for dark UI
-          soft: "#c9c9c9",
-          faint: "#a5a5a5",
-        },
-        paper: {
-          DEFAULT: "#0f172a", // slate-900 backdrop
-          inset: "#111827",
-        },
-        accent: {
-          link: "#93c5fd",     // calm blue
-          linkHover: "#bfdbfe",
-          quote: "#94a3b8",    // slate-400
-          hr: "#1f2937",       // gray-800
-        },
+        serif: ['"Source Serif Pro"', "Georgia", "Cambria", '"Times New Roman"', "Times", "serif"],
+        sans: ['Inter', "system-ui", '"Segoe UI"', "Roboto", '"Helvetica Neue"', "Arial", "sans-serif"],
+        mono: ['"JetBrains Mono"', "Menlo", "Consolas", "monospace"],
       },
       typography: ({ theme }) => ({
-        substack: {
+        mediumReader: {
           css: {
-            // container
             maxWidth: "72ch",
-            color: theme("colors.ink.DEFAULT"),
+            color: "#0f172a",                        /* slate-900 */
             a: {
-              color: theme("colors.accent.link"),
+              color: "#1d4ed8",
               textDecoration: "none",
               fontWeight: "500",
             },
-            "a:hover": {
-              textDecoration: "underline",
-              color: theme("colors.accent.linkHover"),
+            "a:hover": { textDecoration: "underline" },
+            p: {
+              fontFamily: theme("fontFamily.serif").join(","),
+              lineHeight: "1.85",
+              fontSize: "1.0625rem",
+              marginBottom: "1.5rem",
             },
             h1: {
               fontFamily: theme("fontFamily.sans").join(","),
               fontWeight: "800",
-              letterSpacing: "-0.02em",
-              lineHeight: "1.15",
+              fontSize: "2.5rem",
+              lineHeight: "1.2",
+              letterSpacing: "-0.01em",
               marginTop: "0",
-              marginBottom: "0.75em",
+              marginBottom: "0.75rem",
             },
             h2: {
               fontFamily: theme("fontFamily.sans").join(","),
               fontWeight: "700",
-              marginTop: "2em",
-              marginBottom: "0.75em",
+              fontSize: "1.625rem",
+              marginTop: "2.25rem",
+              marginBottom: "0.75rem",
             },
-            h3: { fontWeight: "700", marginTop: "1.75em" },
-            p: {
-              fontFamily: theme("fontFamily.serif").join(","),
-              lineHeight: "1.85",
-              fontSize: "1.05rem",
+            h3: {
+              fontWeight: "700",
+              marginTop: "1.75rem",
+              marginBottom: "0.5rem",
             },
             strong: { fontWeight: "700" },
             em: { fontStyle: "italic" },
+            blockquote: {
+              fontStyle: "italic",
+              color: "#334155",                    /* slate-700 */
+              borderLeft: "4px solid #e5e7eb",     /* gray-200 */
+              paddingLeft: "1rem",
+              marginTop: "1.5rem",
+              marginBottom: "1.5rem",
+            },
+            ul: { paddingLeft: "1.25rem" },
+            ol: { paddingLeft: "1.25rem" },
+            "ul > li::marker, ol > li::marker": { color: "#64748b" },  /* slate-500 */
+            img: {
+              marginTop: "1rem",
+              marginBottom: "0.5rem",
+              borderRadius: "0",
+            },
+            "figure img": { width: "100%" },
+            figcaption: {
+              textAlign: "center",
+              color: "#64748b",                    /* slate-500 */
+              fontSize: "0.95rem",
+              marginBottom: "1rem",
+            },
+            hr: {
+              borderColor: "#e5e7eb",              /* gray-200 */
+              marginTop: "2rem",
+              marginBottom: "2rem",
+            },
             code: {
               fontFamily: theme("fontFamily.mono").join(","),
-              backgroundColor: "#0b1220",
+              backgroundColor: "#f8fafc",          /* slate-50 */
+              color: "#0f172a",                    /* slate-900 */
               padding: "0.1em 0.35em",
               borderRadius: "0.25rem",
               fontSize: "0.95em",
             },
             pre: {
-              backgroundColor: "#0b1220",
-              borderRadius: "0.5rem",
+              backgroundColor: "#f8fafc",          /* slate-50 */
+              color: "#0f172a",                    /* slate-900 */
               padding: "1rem 1.25rem",
+              borderRadius: "0.5rem",
               overflowX: "auto",
             },
             "pre code": {
               backgroundColor: "transparent",
               padding: "0",
-            },
-            blockquote: {
-              fontStyle: "italic",
-              borderLeftColor: theme("colors.accent.quote"),
-              borderLeftWidth: "4px",
-              paddingLeft: "1rem",
-              color: theme("colors.ink.soft"),
-            },
-            hr: {
-              borderColor: theme("colors.accent.hr"),
-              marginTop: "2rem",
-              marginBottom: "2rem",
-            },
-            ul: { paddingLeft: "1.25rem" },
-            ol: { paddingLeft: "1.25rem" },
-            "ul > li::marker, ol > li::marker": { color: theme("colors.ink.faint") },
-            img: {
-              borderRadius: "0.5rem",
-              marginTop: "1.25rem",
-              marginBottom: "0.75rem",
-            },
-            "figure img": { marginTop: "1.5rem", marginBottom: "0.5rem" },
-            figcaption: {
-              textAlign: "center",
-              color: theme("colors.ink.faint"),
-              fontSize: "0.9rem",
-              marginBottom: "1rem",
             },
           },
         },

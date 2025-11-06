@@ -3,16 +3,8 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    color-scheme: dark;
-  }
-
   html, body, #root {
     height: 100%;
-  }
-
-  body {
-    @apply bg-paper text-ink font-serif antialiased;
   }
 
   *, *::before, *::after {
@@ -25,16 +17,10 @@
   }
 
   a {
-    color: inherit;
     transition: color 120ms ease, text-decoration-color 120ms ease;
   }
 
   button {
     font-family: inherit;
-  }
-
-  /* Subtle selection color */
-  ::selection {
-    background-color: rgba(147, 197, 253, 0.25);
   }
 }

@@ -195,7 +195,7 @@ const renderArticle = (segment) => {
   if (segment?.html) {
     return (
       <div
-        className="prose prose-invert prose-substack mx-auto article-segment-content"
+        className="prose prose-mediumReader mx-auto article-segment-content"
         dangerouslySetInnerHTML={{ __html: segment.html }}
       />
     );
@@ -207,7 +207,7 @@ const renderArticle = (segment) => {
   }
 
   return (
-    <div className="prose prose-invert prose-substack mx-auto">
+    <div className="prose prose-mediumReader mx-auto">
       {segment.text.split(/\n{2,}/).map((paragraph, index) => (
         <p key={`${segment.id}-paragraph-${index}`}>{paragraph}</p>
       ))}
@@ -932,51 +932,99 @@ function App() {
 
       <main className="content">
         {training ? (
-          <div className="segment-view">
-            <header className="segment-header">
-              <div>
-                <h2>{training.title}</h2>
-                <p className="segment-meta">
-                  {training.type === "article"
-                    ? `Article · ${training.segments.length} sections · ~${training.segmentMinutes} minutes each`
-                    : `Video · ${training.segments.length} segments · ${training.segmentMinutes} minutes each`}
-                </p>
+          training.type === "article" ? (
+            /* Article: white reading surface with Medium-style layout */
+            <div className="w-full max-w-5xl mx-auto my-6">
+              <div className="bg-white text-slate-900 rounded-2xl shadow-sm px-6 sm:px-12 py-10">
+                <header className="max-w-[72ch] mx-auto mb-8">
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <h1 className="font-sans font-extrabold tracking-tight leading-tight text-3xl sm:text-4xl">
+                      {training.title}
+                    </h1>
+                    <span className="text-sm text-slate-500 whitespace-nowrap mt-2">
+                      Segment {activeIndex + 1} / {training.segments.length}
+                    </span>
+                  </div>
+                  <p className="text-slate-600 font-sans text-sm">
+                    Article · {training.segments.length} sections · ~{training.segmentMinutes} minutes each
+                  </p>
+                </header>
+                <section className="max-w-[72ch] mx-auto mb-8">
+                  <h2 className="font-sans font-bold text-xl mb-6 text-slate-900">{activeSegment.label}</h2>
+                  {renderArticle(activeSegment)}
+                </section>
+                <footer className="max-w-[72ch] mx-auto flex justify-end gap-3 pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={handlePrevious}
+                    disabled={!training.segments.length || activeIndex === 0}
+                    className="px-5 py-2.5 rounded-lg border border-gray-300 bg-white text-slate-700 font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    disabled={
+                      training.segments.length === 0 ||
+                      (activeIndex === training.segments.length - 1 &&
+                        completed[activeIndex])
+                    }
+                    className="px-5 py-2.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {activeIndex === training.segments.length - 1
+                      ? completed[activeIndex]
+                        ? "Completed"
+                        : "Finish segment"
+                      : "Next"}
+                  </button>
+                </footer>
               </div>
-              <span>
-                Segment {activeIndex + 1} / {training.segments.length}
-              </span>
-            </header>
-            <section className="segment-body">
-              <h3>{activeSegment.label}</h3>
-              {training.type === "article"
-                ? renderArticle(activeSegment)
-                : renderVideo(activeSegment, training)}
-            </section>
-            <footer className="segment-footer">
-              <button
-                type="button"
-                onClick={handlePrevious}
-                disabled={!training.segments.length || activeIndex === 0}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={
-                  training.segments.length === 0 ||
-                  (activeIndex === training.segments.length - 1 &&
-                    completed[activeIndex])
-                }
-              >
-                {activeIndex === training.segments.length - 1
-                  ? completed[activeIndex]
-                    ? "Completed"
-                    : "Finish segment"
-                  : "Next"}
-              </button>
-            </footer>
-          </div>
+            </div>
+          ) : (
+            /* Video: keep original dark card style */
+            <div className="segment-view">
+              <header className="segment-header">
+                <div>
+                  <h2>{training.title}</h2>
+                  <p className="segment-meta">
+                    Video · {training.segments.length} segments · {training.segmentMinutes} minutes each
+                  </p>
+                </div>
+                <span>
+                  Segment {activeIndex + 1} / {training.segments.length}
+                </span>
+              </header>
+              <section className="segment-body">
+                <h3>{activeSegment.label}</h3>
+                {renderVideo(activeSegment, training)}
+              </section>
+              <footer className="segment-footer">
+                <button
+                  type="button"
+                  onClick={handlePrevious}
+                  disabled={!training.segments.length || activeIndex === 0}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  disabled={
+                    training.segments.length === 0 ||
+                    (activeIndex === training.segments.length - 1 &&
+                      completed[activeIndex])
+                  }
+                >
+                  {activeIndex === training.segments.length - 1
+                    ? completed[activeIndex]
+                      ? "Completed"
+                      : "Finish segment"
+                    : "Next"}
+                </button>
+              </footer>
+            </div>
+          )
         ) : (
           <div className="placeholder">
             <h2>Create your first training</h2>
