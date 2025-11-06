@@ -452,6 +452,67 @@ function App() {
     window.history.replaceState({}, "", nextUrl.toString());
   }, [training, activeIndex]);
 
+  // Update document title and meta tags when training is loaded
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    if (training?.title) {
+      // Update document title with course title
+      document.title = training.title;
+
+      // Update or create Open Graph meta tags for better sharing
+      const updateMetaTag = (property, content) => {
+        let meta = document.querySelector(`meta[property="${property}"]`);
+        if (!meta) {
+          meta = document.createElement("meta");
+          meta.setAttribute("property", property);
+          document.head.appendChild(meta);
+        }
+        meta.setAttribute("content", content);
+      };
+
+      const updateMetaName = (name, content) => {
+        let meta = document.querySelector(`meta[name="${name}"]`);
+        if (!meta) {
+          meta = document.createElement("meta");
+          meta.setAttribute("name", name);
+          document.head.appendChild(meta);
+        }
+        meta.setAttribute("content", content);
+      };
+
+      // Set Open Graph title
+      updateMetaTag("og:title", training.title);
+
+      // Set Open Graph description
+      const description = training.type === "article"
+        ? `Article · ${training.segments.length} sections · ~${training.segmentMinutes} minutes each`
+        : `Video · ${training.segments.length} segments · ${training.segmentMinutes} minutes each`;
+      updateMetaTag("og:description", description);
+
+      // Set Open Graph URL
+      if (training.sourceUrl) {
+        const shareUrl = typeof window !== "undefined" 
+          ? `${window.location.origin}${window.location.pathname}?source=${encodeURIComponent(training.sourceUrl)}&segment=${activeIndex}`
+          : training.sourceUrl;
+        updateMetaTag("og:url", shareUrl);
+      }
+
+      // Set Open Graph type
+      updateMetaTag("og:type", "website");
+
+      // Set Twitter Card meta tags
+      updateMetaName("twitter:card", "summary");
+      updateMetaName("twitter:title", training.title);
+      updateMetaName("twitter:description", description);
+    } else {
+      // Reset to default title when no training is loaded
+      document.title = "Vite + React";
+    }
+  }, [training, activeIndex]);
+
   useEffect(() => {
     // Keep persistence logic only if shareId exists (backward compatibility)
     // New format doesn't require server-side persistence - progress is in URL
