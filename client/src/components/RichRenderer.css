@@ -1,15 +1,15 @@
-/* Pullquotes - Substack-style emphasis */
+/* Pullquotes - Medium-style emphasis */
 .prose blockquote.pullquote {
   max-width: 68ch;
   margin: 2rem auto;
   padding: 1.25rem 1.5rem;
-  border-left: 4px solid rgba(148, 163, 184, 0.8);
-  background: rgba(17, 24, 39, 0.5);
+  border-left: 4px solid #e5e7eb;
+  background: #f9fafb;
   border-radius: 0.25rem;
   font-size: 1.25rem;
   line-height: 1.6;
   font-style: italic;
-  color: #c9c9c9;
+  color: #334155;
 }
 
 /* Text alignment utilities within prose */
