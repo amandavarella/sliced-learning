@@ -397,11 +397,22 @@ function App() {
           const totalSegments = payload.segments?.length || 0;
           const validSegment = Math.min(requestedSegment, Math.max(0, totalSegments - 1));
 
+          // When a segment parameter is provided, mark all previous segments as completed
+          const existingCompleted = normalizeCompleted(
+            payload.segments || [],
+            payload.progress?.completed,
+          );
+          const completedWithProgress = existingCompleted.map((isCompleted, index) => {
+            // Mark all segments before the requested segment as completed
+            return index < validSegment ? true : isCompleted;
+          });
+
           // Override the default activeIndex with the requested segment
           const modifiedPayload = {
             ...payload,
             progress: {
               ...payload.progress,
+              completed: completedWithProgress,
               activeIndex: validSegment,
             },
           };
