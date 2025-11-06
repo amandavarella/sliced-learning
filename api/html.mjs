@@ -35,12 +35,12 @@ const getTrainingTitle = async (sourceUrl) => {
   }
 };
 
-const injectMetaTags = (html, title, description, url) => {
+const injectMetaTags = (html, title, url) => {
   if (!title) {
     return html;
   }
 
-  // Escape HTML entities in title and description
+  // Escape HTML entities in title
   const escapeHtml = (text) => {
     return text
       .replace(/&/g, "&amp;")
@@ -51,7 +51,6 @@ const injectMetaTags = (html, title, description, url) => {
   };
 
   const escapedTitle = escapeHtml(title);
-  const escapedDescription = escapeHtml(description);
   const escapedUrl = escapeHtml(url);
 
   // Replace the title tag
@@ -90,15 +89,13 @@ const injectMetaTags = (html, title, description, url) => {
     ""
   );
 
-  // Find the closing </head> tag and insert meta tags before it
+  // Find the closing </head> tag and insert meta tags before it (without description)
   const metaTags = `
     <meta property="og:title" content="${escapedTitle}" />
-    <meta property="og:description" content="${escapedDescription}" />
     <meta property="og:url" content="${escapedUrl}" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="${escapedTitle}" />
-    <meta name="twitter:description" content="${escapedDescription}" />
   `;
 
   updatedHtml = updatedHtml.replace("</head>", `${metaTags}</head>`);
@@ -126,11 +123,8 @@ export default async (req, res) => {
         const host = req.headers["x-forwarded-host"] || req.headers.host;
         const fullUrl = `${protocol}://${host}${req.url}`;
 
-        // Create description
-        const description = `Sliced Learning Course`;
-
-        // Inject meta tags
-        html = injectMetaTags(html, title, description, fullUrl);
+        // Inject meta tags (without description)
+        html = injectMetaTags(html, title, fullUrl);
       }
     }
 
