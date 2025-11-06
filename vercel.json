@@ -6,10 +6,15 @@
   "functions": {
     "api/index.mjs": {
       "includeFiles": "server/src/**"
+    },
+    "api/html.mjs": {
+      "includeFiles": "server/src/**"
     }
   },
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/index.mjs" },
+    { "src": "/$", "dest": "/api/html.mjs" },
+    { "src": "/index.html", "dest": "/api/html.mjs" },
     { "src": "/(.*)", "dest": "/client/dist/$1" }
   ]
 }
