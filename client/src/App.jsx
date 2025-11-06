@@ -931,7 +931,7 @@ function App() {
       </aside>
 
       <main className="content">
-        {training ? (
+        {training && activeSegment ? (
           training.type === "article" ? (
             /* Article: white reading surface with Medium-style layout */
             <div className="w-full max-w-5xl mx-auto my-6">
