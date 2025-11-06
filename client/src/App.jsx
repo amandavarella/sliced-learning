@@ -949,7 +949,7 @@ function App() {
                     Article · {training.segments.length} sections · ~{training.segmentMinutes} minutes each
                   </p>
                 </header>
-                <section className="max-w-[72ch] mx-auto mb-8">
+                <section key={activeSegment.id || activeIndex} className="max-w-[72ch] mx-auto mb-8">
                   <h2 className="font-sans font-bold text-xl mb-6 text-slate-900">{activeSegment.label}</h2>
                   {renderArticle(activeSegment)}
                 </section>
@@ -995,7 +995,7 @@ function App() {
                   Segment {activeIndex + 1} / {training.segments.length}
                 </span>
               </header>
-              <section className="segment-body">
+              <section key={activeSegment.id || activeIndex} className="segment-body">
                 <h3>{activeSegment.label}</h3>
                 {renderVideo(activeSegment, training)}
               </section>
