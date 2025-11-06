@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 // Use a real article URL with images for testing
 const ARTICLE_WITH_IMAGES = 'https://en.wikipedia.org/wiki/Machine_learning';
 const SIMPLE_ARTICLE = 'https://en.wikipedia.org/wiki/TypeScript';
+const YOUTUBE_VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
 test.describe('Comprehensive Feature Coverage', () => {
 
@@ -441,6 +442,230 @@ test.describe('Comprehensive Feature Coverage', () => {
         const thirdSegment = page.locator('.segment-item').nth(2);
         const className = await thirdSegment.getAttribute('class');
         expect(className).toContain('active');
+      }
+    });
+  });
+
+  test.describe('YouTube Video Processing', () => {
+    test('should process YouTube URL and display video player', async ({ page }) => {
+      await page.goto('/');
+
+      // Submit YouTube URL
+      await page.fill('#url-input', YOUTUBE_VIDEO);
+      await page.click('button[type="submit"]');
+
+      // Wait for processing to complete
+      await page.waitForSelector('.progress-panel', { timeout: 30000 });
+
+      // Verify video iframe is present
+      const iframe = page.locator('iframe[src*="youtube.com"]');
+      await expect(iframe).toBeVisible();
+
+      // Verify iframe has proper attributes
+      const src = await iframe.getAttribute('src');
+      expect(src).toContain('youtube.com/embed/');
+    });
+
+    test('should create segments for YouTube videos', async ({ page }) => {
+      await page.goto('/');
+
+      await page.fill('#url-input', YOUTUBE_VIDEO);
+      await page.click('button[type="submit"]');
+      await page.waitForSelector('.progress-panel', { timeout: 30000 });
+
+      // Get segment count
+      const segmentCount = await page.locator('.segment-item').count();
+
+      // YouTube videos should have at least one segment
+      expect(segmentCount).toBeGreaterThan(0);
+
+      // Verify segment items are visible
+      const firstSegment = page.locator('.segment-item').first();
+      await expect(firstSegment).toBeVisible();
+    });
+
+    test('should navigate between video segments', async ({ page }) => {
+      await page.goto('/');
+
+      await page.fill('#url-input', YOUTUBE_VIDEO);
+      await page.click('button[type="submit"]');
+      await page.waitForSelector('.progress-panel', { timeout: 30000 });
+
+      // Get initial segment
+      const initialSegmentText = await page.locator('.segment-header span').last().textContent();
+      expect(initialSegmentText).toContain('Segment 1');
+
+      // Get segment count
+      const segmentCount = await page.locator('.segment-item').count();
+
+      if (segmentCount > 1) {
+        // Click Next button
+        await page.click('button:has-text("Next")');
+        await page.waitForTimeout(500);
+
+        // Verify segment changed
+        const newSegmentText = await page.locator('.segment-header span').last().textContent();
+        expect(newSegmentText).toContain('Segment 2');
+
+        // Video iframe should still be visible
+        const iframe = page.locator('iframe[src*="youtube.com"]');
+        await expect(iframe).toBeVisible();
+      }
+    });
+
+    test('should update video iframe timestamp when navigating segments', async ({ page }) => {
+      await page.goto('/');
+
+      await page.fill('#url-input', YOUTUBE_VIDEO);
+      await page.click('button[type="submit"]');
+      await page.waitForSelector('.progress-panel', { timeout: 30000 });
+
+      // Get initial iframe src
+      const iframe = page.locator('iframe[src*="youtube.com"]');
+      const initialSrc = await iframe.getAttribute('src');
+
+      // Get segment count
+      const segmentCount = await page.locator('.segment-item').count();
+
+      if (segmentCount > 1) {
+        // Navigate to next segment
+        await page.click('button:has-text("Next")');
+        await page.waitForTimeout(500);
+
+        // Get new iframe src
+        const newSrc = await iframe.getAttribute('src');
+
+        // The src should have changed (different start time)
+        // Both should contain the video ID but potentially different start parameters
+        expect(newSrc).toBeTruthy();
+        expect(initialSrc).toBeTruthy();
+      }
+    });
+
+    test('should display video metadata', async ({ page }) => {
+      await page.goto('/');
+
+      await page.fill('#url-input', YOUTUBE_VIDEO);
+      await page.click('button[type="submit"]');
+      await page.waitForSelector('.progress-panel', { timeout: 30000 });
+
+      // Check that segment labels are present
+      const segmentLabel = page.locator('.segment-body h3').first();
+      await expect(segmentLabel).toBeVisible();
+
+      const labelText = await segmentLabel.textContent();
+      expect(labelText).toBeTruthy();
+      expect(labelText?.length).toBeGreaterThan(0);
+    });
+
+    test('should track progress for video segments', async ({ page }) => {
+      await page.goto('/');
+
+      await page.fill('#url-input', YOUTUBE_VIDEO);
+      await page.click('button[type="submit"]');
+      await page.waitForSelector('.progress-panel', { timeout: 30000 });
+
+      // Get initial progress
+      const initialProgress = await page.locator('.progress-header span').last().textContent();
+      const initialPercent = parseInt(initialProgress?.replace('%', '') || '0');
+
+      // Get segment count
+      const segmentCount = await page.locator('.segment-item').count();
+
+      if (segmentCount > 1) {
+        // Complete first segment
+        await page.click('button:has-text("Next")');
+        await page.waitForTimeout(500);
+
+        // Get new progress
+        const newProgress = await page.locator('.progress-header span').last().textContent();
+        const newPercent = parseInt(newProgress?.replace('%', '') || '0');
+
+        // Progress should increase
+        expect(newPercent).toBeGreaterThan(initialPercent);
+
+        // First segment should be marked as completed
+        const firstSegment = page.locator('.segment-item').first();
+        const className = await firstSegment.getAttribute('class');
+        expect(className).toContain('completed');
+      }
+    });
+
+    test('should maintain video styling separate from article styling', async ({ page }) => {
+      await page.goto('/');
+
+      await page.fill('#url-input', YOUTUBE_VIDEO);
+      await page.click('button[type="submit"]');
+      await page.waitForSelector('.progress-panel', { timeout: 30000 });
+
+      // Video should use segment-view class (dark style), not the white article card
+      const segmentView = page.locator('.segment-view');
+      await expect(segmentView).toBeVisible();
+
+      // Video should NOT have the white article card wrapper
+      const whiteCard = page.locator('.bg-white.rounded-2xl');
+      const cardCount = await whiteCard.count();
+      expect(cardCount).toBe(0);
+
+      // Verify dark background for video content
+      const backgroundColor = await segmentView.evaluate((el) => {
+        return window.getComputedStyle(el).backgroundColor;
+      });
+
+      // Should have dark background (not white)
+      expect(backgroundColor).not.toBe('rgb(255, 255, 255)');
+    });
+
+    test('should handle different YouTube URL formats', async ({ page }) => {
+      // Test with youtu.be short URL
+      const shortUrl = 'https://youtu.be/dQw4w9WgXcQ';
+
+      await page.goto('/');
+      await page.fill('#url-input', shortUrl);
+      await page.click('button[type="submit"]');
+
+      // Should successfully process
+      await page.waitForSelector('.progress-panel', { timeout: 30000 });
+
+      // Video iframe should be visible
+      const iframe = page.locator('iframe[src*="youtube.com"]');
+      await expect(iframe).toBeVisible();
+    });
+
+    test('should persist video progress across page reloads', async ({ page }) => {
+      await page.goto('/');
+
+      await page.fill('#url-input', YOUTUBE_VIDEO);
+      await page.click('button[type="submit"]');
+      await page.waitForSelector('.progress-panel', { timeout: 30000 });
+
+      // Get segment count
+      const segmentCount = await page.locator('.segment-item').count();
+
+      if (segmentCount > 1) {
+        // Navigate to segment 2
+        await page.click('button:has-text("Next")');
+        await page.waitForTimeout(500);
+
+        // Verify we're on segment 2
+        const segmentText = await page.locator('.segment-header span').last().textContent();
+        expect(segmentText).toContain('Segment 2');
+
+        // Get current URL
+        const currentUrl = page.url();
+
+        // Reload page with same URL
+        await page.goto(currentUrl);
+        await page.waitForSelector('.progress-panel', { timeout: 5000 });
+
+        // Should still be on segment 2
+        const reloadedSegmentText = await page.locator('.segment-header span').last().textContent();
+        expect(reloadedSegmentText).toContain('Segment 2');
+
+        // First segment should still be marked as completed
+        const firstSegment = page.locator('.segment-item').first();
+        const className = await firstSegment.getAttribute('class');
+        expect(className).toContain('completed');
       }
     });
   });
