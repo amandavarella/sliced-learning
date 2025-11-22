@@ -36,16 +36,55 @@ const extractFolderId = (url) => {
 };
 
 /**
+ * Determine file type from file name
+ */
+const getFileType = (fileName) => {
+  if (!fileName) return "unknown";
+  
+  const extension = fileName.split('.').pop()?.toLowerCase() || '';
+  
+  const audioExtensions = ['m4a', 'mp3', 'wav', 'ogg', 'aac', 'flac', 'wma'];
+  const videoExtensions = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'];
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
+  const textExtensions = ['txt', 'md', 'json', 'xml', 'csv', 'log'];
+  const documentExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+  
+  if (audioExtensions.includes(extension)) return "audio";
+  if (videoExtensions.includes(extension)) return "video";
+  if (imageExtensions.includes(extension)) return "image";
+  if (textExtensions.includes(extension)) return "text";
+  if (documentExtensions.includes(extension)) return "document";
+  
+  return "unknown";
+};
+
+/**
  * Fetch file content from Google Drive
- * For public files, we can use the direct download link
+ * For public files, we can use the direct download link or view link
  */
 const fetchFileContent = async (fileId, fileName = "") => {
-  try {
-    // Try to get file content using direct download link
-    // For public files, we can use: https://drive.google.com/uc?export=download&id=FILE_ID
+  const fileType = getFileType(fileName);
+  
+  // For audio, video, and image files, we can't extract text content
+  // Instead, provide a link to view/download the file
+  if (fileType === "audio" || fileType === "video" || fileType === "image") {
+    const viewUrl = `https://drive.google.com/file/d/${fileId}/view`;
     const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
     
-    // First, try to get the file metadata to determine type
+    return {
+      content: `This is a ${fileType} file. [View in Google Drive](${viewUrl}) or [Download](${downloadUrl})`,
+      type: "text",
+      fileType,
+      viewUrl,
+      downloadUrl,
+    };
+  }
+  
+  // For text and document files, try to fetch content
+  try {
+    // Try direct download first
+    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+    
     const response = await axios.get(downloadUrl, {
       responseType: "text",
       maxRedirects: 5,
@@ -56,59 +95,122 @@ const fetchFileContent = async (fileId, fileName = "") => {
       timeout: 30000,
     });
 
-    return {
-      content: response.data,
-      type: "text",
-    };
+    // Check if we got actual content or an error page
+    if (response.data && response.data.length > 100 && !response.data.includes('Google Drive - Virus scan warning')) {
+      return {
+        content: response.data,
+        type: "text",
+        fileType,
+      };
+    }
   } catch (error) {
-    // If direct download fails, try to get HTML view and extract content
-    try {
-      const viewUrl = `https://drive.google.com/file/d/${fileId}/view`;
-      const htmlResponse = await axios.get(viewUrl, {
-        responseType: "text",
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        },
-        timeout: 30000,
-      });
+    // Continue to try HTML view
+  }
+  
+  // Try to get HTML view and extract content
+  try {
+    const viewUrl = `https://drive.google.com/file/d/${fileId}/view`;
+    const htmlResponse = await axios.get(viewUrl, {
+      responseType: "text",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      },
+      timeout: 30000,
+    });
 
-      const dom = new JSDOM(htmlResponse.data, { url: viewUrl });
-      const reader = new Readability(dom.window.document);
-      const parsed = reader.parse();
+    const dom = new JSDOM(htmlResponse.data, { url: viewUrl });
+    const reader = new Readability(dom.window.document);
+    const parsed = reader.parse();
 
-      if (parsed) {
-        return {
-          content: parsed.textContent || parsed.content || "",
-          type: "html",
-          html: parsed.content,
-        };
-      }
+    if (parsed && parsed.textContent && parsed.textContent.trim().length > 50) {
+      return {
+        content: parsed.textContent || "",
+        type: "html",
+        html: parsed.content,
+        fileType,
+      };
+    }
 
-      // Fallback: extract text from body
-      const bodyText = dom.window.document.body?.textContent || "";
+    // Fallback: extract text from body
+    const bodyText = dom.window.document.body?.textContent || "";
+    if (bodyText.trim().length > 50) {
       return {
         content: bodyText,
         type: "text",
-      };
-    } catch (fallbackError) {
-      console.error("[driveService] Failed to fetch file content:", {
-        fileId,
-        fileName,
-        error: fallbackError.message,
-      });
-      return {
-        content: `Unable to load content from file: ${fileName || fileId}`,
-        type: "text",
+        fileType,
       };
     }
+  } catch (fallbackError) {
+    console.error("[driveService] Failed to fetch file content:", {
+      fileId,
+      fileName,
+      error: fallbackError.message,
+    });
   }
+  
+  // If all else fails, provide a link
+  const viewUrl = `https://drive.google.com/file/d/${fileId}/view`;
+  const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+  
+  return {
+    content: `Unable to extract text content from this file. [View in Google Drive](${viewUrl}) or [Download](${downloadUrl})`,
+    type: "text",
+    fileType,
+    viewUrl,
+    downloadUrl,
+  };
+};
+
+/**
+ * Check if a string looks like a valid Google Drive file ID
+ * Valid IDs are typically 25-33 characters, alphanumeric with dashes/underscores
+ * and don't contain obvious non-ID patterns
+ */
+const isValidFileId = (id, folderId) => {
+  if (!id || typeof id !== 'string') {
+    return false;
+  }
+  
+  // Must be 25-33 characters (Google Drive file ID length)
+  if (id.length < 25 || id.length > 33) {
+    return false;
+  }
+  
+  // Must be alphanumeric with dashes/underscores only
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    return false;
+  }
+  
+  // Filter out obvious non-file IDs
+  const invalidPatterns = [
+    /^ANONYMOUS_/i,
+    /^Viewer/i,
+    /^off$/i,
+    /^on$/i,
+    /^true$/i,
+    /^false$/i,
+    /^null$/i,
+    /^undefined$/i,
+  ];
+  
+  for (const pattern of invalidPatterns) {
+    if (pattern.test(id)) {
+      return false;
+    }
+  }
+  
+  // Must not be the folder ID
+  if (id === folderId) {
+    return false;
+  }
+  
+  return true;
 };
 
 /**
  * List files in a Google Drive folder
- * For public folders, we can scrape the folder page
- * Google Drive embeds file data in window['_DRIVE_ivd'] or similar JSON structures
+ * For public folders, we scrape the folder page and extract file data
  */
 const listFolderFiles = async (folderId) => {
   try {
@@ -127,107 +229,160 @@ const listFolderFiles = async (folderId) => {
 
     const html = response.data;
     const files = [];
+    const seenIds = new Set();
     
-    // Google Drive embeds file data in script tags
-    // Look for JSON data structures that contain file information
-    const scriptMatches = html.match(/<script[^>]*>([\s\S]*?)<\/script>/gi);
+    // Google Drive stores file data in window['_DRIVE_ivd'] or similar
+    // Look for the main data structure
+    const driveDataPattern = /window\[['"]_DRIVE[^'"]*['"]\]\s*=\s*({[\s\S]*?});/;
+    const driveDataMatch = html.match(driveDataPattern);
     
-    if (scriptMatches) {
-      for (const scriptTag of scriptMatches) {
-        const scriptContent = scriptTag.replace(/<\/?script[^>]*>/gi, '');
+    if (driveDataMatch) {
+      try {
+        // Try to extract and parse the JSON
+        let jsonStr = driveDataMatch[1];
         
-        // Try to find window['_DRIVE_ivd'] or similar structures
-        // Look for patterns like: window['_DRIVE_ivd'] = {...}
-        const driveDataMatches = scriptContent.match(/window\[['"]_DRIVE[^'"]*['"]\]\s*=\s*({[\s\S]*?});/);
+        // The JSON might be incomplete, try to find the closing brace
+        let braceCount = 0;
+        let endIndex = 0;
+        for (let i = 0; i < jsonStr.length; i++) {
+          if (jsonStr[i] === '{') braceCount++;
+          if (jsonStr[i] === '}') {
+            braceCount--;
+            if (braceCount === 0) {
+              endIndex = i + 1;
+              break;
+            }
+          }
+        }
         
-        if (driveDataMatches) {
-          try {
-            const jsonStr = driveDataMatches[1];
-            const data = JSON.parse(jsonStr);
+        if (endIndex > 0) {
+          jsonStr = jsonStr.substring(0, endIndex);
+          const data = JSON.parse(jsonStr);
+          
+          // Recursively search for file entries
+          // Files are typically in arrays with structure like: [fileId, ...otherData, fileName]
+          const extractFiles = (obj, depth = 0) => {
+            if (depth > 10) return; // Prevent infinite recursion
             
-            // Navigate through the data structure to find files
-            // The structure varies, so we'll try multiple paths
-            const findFilesInObject = (obj, path = []) => {
-              if (typeof obj !== 'object' || obj === null) {
-                return;
-              }
+            if (Array.isArray(obj)) {
+            // Check if first element looks like a file ID
+            if (obj.length >= 2 && isValidFileId(obj[0], folderId)) {
+              const fileId = obj[0];
+              // File name is often in position 2 or 3, or in a nested structure
+              let fileName = null;
               
-              // Look for arrays that might contain file data
-              if (Array.isArray(obj)) {
-                obj.forEach((item, index) => {
-                  if (typeof item === 'object' && item !== null) {
-                    // Check if this looks like a file object
-                    if (item[0] && typeof item[0] === 'string' && item[0].length >= 25) {
-                      // This might be a file ID
-                      const fileId = item[0];
-                      const fileName = item[2] || item[1] || `File ${files.length + 1}`;
-                      
-                      if (fileId !== folderId && !files.find(f => f.id === fileId)) {
-                        files.push({
-                          id: fileId,
-                          name: String(fileName),
-                        });
+              // Try different positions for file name
+              for (let i = 1; i < Math.min(10, obj.length); i++) {
+                if (typeof obj[i] === 'string' && obj[i].length > 0 && obj[i].length < 500) {
+                  // Check if it looks like a file name (not a file ID, not a URL, has reasonable length)
+                  if (!isValidFileId(obj[i], folderId) && 
+                      !obj[i].match(/^https?:\/\//) &&
+                      !obj[i].match(/^[0-9]+$/) && // Not just numbers
+                      obj[i].includes('.')) { // File names usually have extensions
+                    fileName = obj[i];
+                    break;
+                  }
+                } else if (Array.isArray(obj[i]) && obj[i].length > 0) {
+                  // Sometimes the name is in a nested array
+                  for (const item of obj[i]) {
+                    if (typeof item === 'string' && item.length > 0 && item.length < 500 && item.includes('.')) {
+                      if (!isValidFileId(item, folderId) && !item.match(/^https?:\/\//)) {
+                        fileName = item;
+                        break;
                       }
                     }
-                    findFilesInObject(item, [...path, index]);
                   }
-                });
-              } else {
-                // Check object keys for file-like structures
-                for (const [key, value] of Object.entries(obj)) {
-                  if (key === 'id' && typeof value === 'string' && value.length >= 25 && value !== folderId) {
-                    const fileName = obj.name || obj.title || `File ${files.length + 1}`;
-                    if (!files.find(f => f.id === value)) {
-                      files.push({
-                        id: value,
-                        name: String(fileName),
-                      });
-                    }
-                  }
-                  findFilesInObject(value, [...path, key]);
+                  if (fileName) break;
                 }
               }
-            };
-            
-            findFilesInObject(data);
-          } catch (parseError) {
-            // If JSON parsing fails, continue with other methods
-            console.log("[driveService] Failed to parse embedded JSON:", parseError.message);
-          }
+              
+              if (fileId && !seenIds.has(fileId)) {
+                seenIds.add(fileId);
+                files.push({
+                  id: fileId,
+                  name: fileName || `File ${files.length + 1}`,
+                });
+              }
+            }
+              
+              // Recursively check array elements
+              obj.forEach(item => {
+                if (typeof item === 'object' && item !== null) {
+                  extractFiles(item, depth + 1);
+                }
+              });
+            } else if (typeof obj === 'object' && obj !== null) {
+              // Check object properties
+              for (const [key, value] of Object.entries(obj)) {
+                // Look for file-like structures
+                if (key === 'id' && isValidFileId(value, folderId)) {
+                  const fileId = value;
+                  const fileName = obj.name || obj.title || obj.filename || null;
+                  
+                  if (fileId && !seenIds.has(fileId)) {
+                    seenIds.add(fileId);
+                    files.push({
+                      id: fileId,
+                      name: fileName || `File ${files.length + 1}`,
+                    });
+                  }
+                } else if (typeof value === 'object' && value !== null) {
+                  extractFiles(value, depth + 1);
+                }
+              }
+            }
+          };
+          
+          extractFiles(data);
         }
-        
-        // Also look for direct file ID patterns in script content
-        // Google Drive file IDs are typically 25-33 characters
-        const fileIdPattern = /["']([a-zA-Z0-9_-]{25,33})["']/g;
-        let match;
-        while ((match = fileIdPattern.exec(scriptContent)) !== null) {
-          const potentialId = match[1];
-          if (potentialId !== folderId && !files.find(f => f.id === potentialId)) {
-            files.push({
-              id: potentialId,
-              name: `File ${files.length + 1}`,
-            });
-          }
-        }
+      } catch (parseError) {
+        console.log("[driveService] Failed to parse embedded JSON:", parseError.message);
       }
     }
     
-    // Fallback: Try DOM parsing
+    // Alternative: Look for file links in the HTML
+    // Google Drive file links have pattern: /drive/u/0/folders/FOLDER_ID or /file/d/FILE_ID
+    const fileLinkPattern = /\/file\/d\/([a-zA-Z0-9_-]{25,33})/g;
+    let linkMatch;
+    while ((linkMatch = fileLinkPattern.exec(html)) !== null) {
+      const fileId = linkMatch[1];
+      if (isValidFileId(fileId, folderId) && !seenIds.has(fileId)) {
+        seenIds.add(fileId);
+        // Try to find the file name nearby in the HTML
+        const contextStart = Math.max(0, linkMatch.index - 500);
+        const contextEnd = Math.min(html.length, linkMatch.index + 500);
+        const context = html.substring(contextStart, contextEnd);
+        
+        // Look for aria-label or title attributes near the link
+        const nameMatch = context.match(/(?:aria-label|title)=["']([^"']{1,200})["']/i);
+        const fileName = nameMatch ? nameMatch[1] : null;
+        
+        files.push({
+          id: fileId,
+          name: fileName || `File ${files.length + 1}`,
+        });
+      }
+    }
+    
+    // Also try to extract from data attributes in the DOM
     if (files.length === 0) {
       const dom = new JSDOM(html, { url: folderUrl });
       const document = dom.window.document;
       
-      // Look for elements with data-id attributes
-      const elementsWithId = document.querySelectorAll('[data-id]');
-      elementsWithId.forEach((element) => {
-        const fileId = element.getAttribute('data-id');
-        if (fileId && fileId.length >= 25 && fileId !== folderId) {
-          const fileName = element.textContent?.trim() || 
-                          element.getAttribute('aria-label') || 
-                          element.getAttribute('title') ||
-                          `File ${files.length + 1}`;
-          
-          if (!files.find(f => f.id === fileId)) {
+      // Look for links to files
+      const fileLinks = document.querySelectorAll('a[href*="/file/d/"]');
+      fileLinks.forEach((link) => {
+        const href = link.getAttribute('href');
+        const fileIdMatch = href.match(/\/file\/d\/([a-zA-Z0-9_-]{25,33})/);
+        if (fileIdMatch) {
+          const fileId = fileIdMatch[1];
+          if (isValidFileId(fileId, folderId) && !seenIds.has(fileId)) {
+            seenIds.add(fileId);
+            const fileName = link.textContent?.trim() || 
+                            link.getAttribute('aria-label') || 
+                            link.getAttribute('title') ||
+                            `File ${files.length + 1}`;
+            
             files.push({
               id: fileId,
               name: fileName,
@@ -237,13 +392,13 @@ const listFolderFiles = async (folderId) => {
       });
     }
 
-    // Remove duplicates and filter out the folder itself
+    // Remove duplicates (shouldn't be needed but just in case)
     const uniqueFiles = [];
-    const seenIds = new Set();
+    const finalSeenIds = new Set();
     
     for (const file of files) {
-      if (file.id !== folderId && !seenIds.has(file.id)) {
-        seenIds.add(file.id);
+      if (isValidFileId(file.id, folderId) && !finalSeenIds.has(file.id)) {
+        finalSeenIds.add(file.id);
         uniqueFiles.push(file);
       }
     }
