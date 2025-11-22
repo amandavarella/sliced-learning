@@ -575,6 +575,13 @@ export const processDrive = async (url) => {
       });
 
       const fileType = getFileType(file.name);
+      const cleanedName = cleanFileName(file.name);
+      
+      console.log("[driveService] File type detection:", {
+        originalName: file.name,
+        cleanedName,
+        detectedType: fileType,
+      });
       
       // For audio, video, and image files, skip content fetching and create segment with links
       if (fileType === "audio" || fileType === "video" || fileType === "image") {
