@@ -42,36 +42,37 @@ const cleanFileName = (fileName) => {
   if (!fileName) return "";
   
   // First, try to extract filename.extension pattern
-  // Match: filename.extension where extension is 2-5 alphanumeric chars
+  // Match: filename.extension where extension might have extra chars (like "m4aSh")
   // This handles cases like "1.1Spiral230823.m4aSh" -> "1.1Spiral230823.m4a"
-  const extensionMatch = fileName.match(/^([^\s]+)\.([a-zA-Z0-9]{2,5})/);
+  const extensionMatch = fileName.match(/^([^\s]+)\.([a-zA-Z0-9]+)/);
   if (extensionMatch) {
     const baseName = extensionMatch[1];
-    const extension = extensionMatch[2].toLowerCase();
+    let extension = extensionMatch[2].toLowerCase();
     
-    // Common file extensions
+    // Common file extensions (ordered by length, longest first for proper matching)
     const validExtensions = [
-      'm4a', 'mp3', 'wav', 'ogg', 'aac', 'flac', 'wma', // audio
-      'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', // video
-      'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', // image
-      'txt', 'md', 'json', 'xml', 'csv', 'log', // text
-      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', // documents
+      'docx', 'xlsx', 'pptx', 'jpeg', // 4-5 chars
+      'flac', 'webm', 'webp', // 4 chars
+      'm4a', 'mp3', 'mp4', 'wav', 'ogg', 'aac', 'wma', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'jpg', 'png', 'gif', 'bmp', 'svg', 'txt', 'xml', 'csv', 'log', 'pdf', 'doc', 'xls', 'ppt', 'md', // 3 chars
+      'json', // special case
     ];
     
-    // If the extension matches a known one, use it
-    if (validExtensions.includes(extension)) {
-      return `${baseName}.${extension}`;
-    }
-    
-    // Otherwise, try to find a valid extension by checking if extension starts with a known one
+    // Try to find a valid extension by checking if the extension starts with a known one
+    // Check longer extensions first
     for (const validExt of validExtensions) {
       if (extension.startsWith(validExt)) {
-        return `${baseName}.${validExt}`;
+        // Make sure it's not followed by another valid extension character
+        // e.g., "m4aSh" should match "m4a", but "jpeg" should match "jpeg" not "jpg"
+        const remaining = extension.slice(validExt.length);
+        // If remaining is empty or starts with non-letter, it's a valid match
+        if (remaining.length === 0 || !/[a-zA-Z]/.test(remaining[0])) {
+          return `${baseName}.${validExt}`;
+        }
       }
     }
     
-    // If no match, return with cleaned extension (remove trailing non-alphanumeric)
-    const cleanedExt = extension.replace(/[^a-zA-Z0-9].*$/, '');
+    // If no match, try to extract a reasonable extension (2-5 chars, alphanumeric only)
+    const cleanedExt = extension.match(/^[a-zA-Z0-9]{2,5}/)?.[0] || extension.substring(0, 5);
     return `${baseName}.${cleanedExt}`;
   }
   
