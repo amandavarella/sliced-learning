@@ -72,10 +72,11 @@ const getFileType = (fileName) => {
   const parts = cleaned.split('.');
   if (parts.length < 2) return "unknown";
   
-  let extension = parts.pop()?.toLowerCase() || '';
+  let extension = parts.pop() || '';
   
-  // Remove any trailing non-letter characters (e.g., "m4aSh" -> "m4a")
-  extension = extension.replace(/[^a-z0-9].*$/, '');
+  // Remove any trailing non-letter/number characters (e.g., "m4aSh" -> "m4a")
+  // This handles case-insensitive matching
+  extension = extension.replace(/[^a-zA-Z0-9].*$/i, '').toLowerCase();
   
   const audioExtensions = ['m4a', 'mp3', 'wav', 'ogg', 'aac', 'flac', 'wma'];
   const videoExtensions = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'];
