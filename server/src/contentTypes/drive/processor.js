@@ -1,12 +1,10 @@
 import axios from "axios";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import { chunkByWordGoal, chunkHtmlContent } from "../../utils/segmentation.js";
 import { sanitizeHtml } from "../../utils/sanitize.js";
 
 const WORDS_PER_MINUTE = 200;
 const SEGMENT_MINUTES = 2;
-const MAX_WORDS_PER_SEGMENT = WORDS_PER_MINUTE * SEGMENT_MINUTES;
 
 /**
  * Extract folder ID from Google Drive URL
@@ -261,29 +259,30 @@ const listFolderFiles = async (folderId) => {
 };
 
 /**
- * Process file content into segments
+ * Process file content into a single segment (one file = one segment)
  */
 const processFileContent = (content, html, fileName) => {
   if (html) {
     const sanitizedHtml = sanitizeHtml(html);
-    const htmlSegments = chunkHtmlContent(sanitizedHtml, MAX_WORDS_PER_SEGMENT);
+    // Count words from the HTML content
+    const tempDom = new JSDOM(`<body>${sanitizedHtml}</body>`);
+    const textContent = tempDom.window.document.body.textContent || "";
+    const wordCount = textContent.trim().split(/\s+/).filter(Boolean).length;
     
-    if (htmlSegments.length > 0) {
-      return htmlSegments.map((segment) => ({
-        html: segment.html,
-        text: segment.text,
-        wordCount: segment.wordCount,
-      }));
-    }
+    return {
+      html: sanitizedHtml,
+      text: textContent,
+      wordCount,
+    };
   }
 
-  // Fallback to text-based chunking
-  const textSegments = chunkByWordGoal(content, MAX_WORDS_PER_SEGMENT);
-  return textSegments.map((segment) => ({
-    text: segment.text,
-    wordCount: segment.wordCount,
+  // For text content, count words and return as single segment
+  const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+  return {
+    text: content,
+    wordCount,
     html: null,
-  }));
+  };
 };
 
 export const processDrive = async (url) => {
@@ -326,52 +325,27 @@ export const processDrive = async (url) => {
 
       try {
         const fileData = await fetchFileContent(file.id, file.name);
-        const fileSegments = processFileContent(
+        const fileSegment = processFileContent(
           fileData.content,
           fileData.html,
           file.name,
         );
 
-        // If file has multiple segments, create sub-segments
-        // Otherwise, create a single segment per file
-        if (fileSegments.length === 1) {
-          const segment = fileSegments[0];
-          totalWords += segment.wordCount;
-          segments.push({
-            id: `segment-${index + 1}`,
-            label: file.name || `File ${index + 1}`,
-            wordCount: segment.wordCount,
-            estimatedMinutes: Math.max(
-              1,
-              Math.round(segment.wordCount / WORDS_PER_MINUTE),
-            ),
-            text: segment.text,
-            html: segment.html,
-            fileId: file.id,
-            fileName: file.name,
-          });
-        } else {
-          // Multiple segments from one file
-          fileSegments.forEach((fileSegment, segIndex) => {
-            totalWords += fileSegment.wordCount;
-            segments.push({
-              id: `segment-${index + 1}-${segIndex + 1}`,
-              label:
-                fileSegments.length > 1
-                  ? `${file.name} - Part ${segIndex + 1}`
-                  : file.name,
-              wordCount: fileSegment.wordCount,
-              estimatedMinutes: Math.max(
-                1,
-                Math.round(fileSegment.wordCount / WORDS_PER_MINUTE),
-              ),
-              text: fileSegment.text,
-              html: fileSegment.html,
-              fileId: file.id,
-              fileName: file.name,
-            });
-          });
-        }
+        // Each file becomes exactly one segment
+        totalWords += fileSegment.wordCount;
+        segments.push({
+          id: `segment-${index + 1}`,
+          label: file.name || `File ${index + 1}`,
+          wordCount: fileSegment.wordCount,
+          estimatedMinutes: Math.max(
+            1,
+            Math.round(fileSegment.wordCount / WORDS_PER_MINUTE),
+          ),
+          text: fileSegment.text,
+          html: fileSegment.html,
+          fileId: file.id,
+          fileName: file.name,
+        });
       } catch (fileError) {
         console.error("[driveService] Failed to process file:", {
           fileId: file.id,
