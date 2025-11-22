@@ -41,20 +41,47 @@ const extractFolderId = (url) => {
 const cleanFileName = (fileName) => {
   if (!fileName) return "";
   
-  // Remove common suffixes that Google Drive adds
+  // First, try to extract filename.extension pattern
+  // Match: filename.extension where extension is 2-5 alphanumeric chars
+  // This handles cases like "1.1Spiral230823.m4aSh" -> "1.1Spiral230823.m4a"
+  const extensionMatch = fileName.match(/^([^\s]+)\.([a-zA-Z0-9]{2,5})/);
+  if (extensionMatch) {
+    const baseName = extensionMatch[1];
+    const extension = extensionMatch[2].toLowerCase();
+    
+    // Common file extensions
+    const validExtensions = [
+      'm4a', 'mp3', 'wav', 'ogg', 'aac', 'flac', 'wma', // audio
+      'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', // video
+      'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', // image
+      'txt', 'md', 'json', 'xml', 'csv', 'log', // text
+      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', // documents
+    ];
+    
+    // If the extension matches a known one, use it
+    if (validExtensions.includes(extension)) {
+      return `${baseName}.${extension}`;
+    }
+    
+    // Otherwise, try to find a valid extension by checking if extension starts with a known one
+    for (const validExt of validExtensions) {
+      if (extension.startsWith(validExt)) {
+        return `${baseName}.${validExt}`;
+      }
+    }
+    
+    // If no match, return with cleaned extension (remove trailing non-alphanumeric)
+    const cleanedExt = extension.replace(/[^a-zA-Z0-9].*$/, '');
+    return `${baseName}.${cleanedExt}`;
+  }
+  
+  // Fallback: remove common suffixes that Google Drive adds
   const cleaned = fileName
     .replace(/Shared$/i, '')
     .replace(/Owner.*$/i, '')
     .replace(/hidden.*$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
-  
-  // Extract just the filename part (before any extra text)
-  // Look for pattern: filename.extension
-  const match = cleaned.match(/^([^\s]+\.\w{2,5})/);
-  if (match) {
-    return match[1];
-  }
   
   return cleaned;
 };
