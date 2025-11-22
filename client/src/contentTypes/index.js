@@ -1,5 +1,6 @@
 import { articleContentType } from "./article/index.js";
 import { videoContentType } from "./video/index.js";
+import { driveContentType } from "./drive/index.js";
 
 /**
  * Registry of all content type renderers
@@ -7,6 +8,7 @@ import { videoContentType } from "./video/index.js";
 const contentTypes = [
   articleContentType,
   videoContentType,
+  driveContentType,
 ];
 
 /**

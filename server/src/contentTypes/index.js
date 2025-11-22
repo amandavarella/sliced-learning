@@ -1,5 +1,6 @@
 import { videoContentType } from "./video/index.js";
 import { articleContentType } from "./article/index.js";
+import { driveContentType } from "./drive/index.js";
 
 /**
  * Registry of all content types
@@ -7,6 +8,7 @@ import { articleContentType } from "./article/index.js";
  * The first content type that detects a match will be used
  */
 const contentTypes = [
+  driveContentType, // Drive detection should come before article (more specific)
   videoContentType, // Video detection should come before article (more specific)
   articleContentType, // Article is the default/fallback
 ];

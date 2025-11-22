@@ -98,7 +98,7 @@ function App() {
     event.preventDefault();
 
     if (!url.trim()) {
-      setError("Please paste a valid article or YouTube link.");
+      setError("Please paste a valid article, YouTube, or Google Drive folder link.");
       return;
     }
 
@@ -555,7 +555,7 @@ function App() {
       <aside className="sidebar">
         <h1>Sliced Learning</h1>
         <form className="input-form" onSubmit={handleSubmit}>
-          <label htmlFor="url-input">Paste an article or YouTube link</label>
+          <label htmlFor="url-input">Paste an article, YouTube, or Google Drive folder link</label>
           <div className="field-row">
             <input
               id="url-input"
@@ -686,7 +686,7 @@ function App() {
           <div className="placeholder">
             <h2>Create your first training</h2>
             <p>
-              Paste a link to a long-form article or a YouTube video and we will
+              Paste a link to a long-form article, a YouTube video, or a Google Drive folder and we will
               slice it into bite-sized learning modules. Track your progress on
               the left as you move through each segment.
             </p>
