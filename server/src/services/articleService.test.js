@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import axios from "axios";
 
-import { processArticle } from "./articleService.js";
+import { processArticle } from "../contentTypes/article/processor.js";
 
 const FIXTURE_HTML = `<!DOCTYPE html>
 <html lang="en">
