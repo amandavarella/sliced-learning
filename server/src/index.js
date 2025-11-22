@@ -2,8 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import crypto from "node:crypto";
-import { processArticle } from "./services/articleService.js";
-import { processVideo } from "./services/videoService.v2.js";
+import { processContent, detectContentType } from "./contentTypes/index.js";
 import {
   saveTraining,
   loadTraining,
@@ -15,8 +14,6 @@ const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
-
-const isYouTubeLink = (url) => /(youtube\.com|youtu\.be)/i.test(url);
 
 const buildResponsePayload = (record, request) => {
   const segments = Array.isArray(record.payload?.segments)
@@ -63,15 +60,15 @@ app.post("/api/process", async (request, response) => {
 
   try {
     const trimmedUrl = String(url).trim();
-    const contentType = isYouTubeLink(trimmedUrl) ? "video" : "article";
+    const detectedType = detectContentType(trimmedUrl);
+    const contentType = detectedType?.type || "unknown";
+    
     console.log("[api/process] Processing request:", {
       url: trimmedUrl,
       contentType,
     });
 
-    const payload = contentType === "video"
-      ? await processVideo(trimmedUrl)
-      : await processArticle(trimmedUrl);
+    const payload = await processContent(trimmedUrl);
 
     const progress = {
       completed: payload.segments.map(() => false),
