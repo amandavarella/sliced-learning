@@ -58,16 +58,11 @@ const cleanFileName = (fileName) => {
     ];
     
     // Try to find a valid extension by checking if the extension starts with a known one
-    // Check longer extensions first
+    // Check longer extensions first (so "jpeg" matches before "jpg")
     for (const validExt of validExtensions) {
       if (extension.startsWith(validExt)) {
-        // Make sure it's not followed by another valid extension character
-        // e.g., "m4aSh" should match "m4a", but "jpeg" should match "jpeg" not "jpg"
-        const remaining = extension.slice(validExt.length);
-        // If remaining is empty or starts with non-letter, it's a valid match
-        if (remaining.length === 0 || !/[a-zA-Z]/.test(remaining[0])) {
-          return `${baseName}.${validExt}`;
-        }
+        // Use the valid extension - any remaining characters are likely garbage (like "Sh" in "m4aSh")
+        return `${baseName}.${validExt}`;
       }
     }
     
