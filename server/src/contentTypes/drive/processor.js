@@ -535,46 +535,75 @@ export const processDrive = async (url) => {
         fileName: file.name,
       });
 
-      try {
-        const fileData = await fetchFileContent(file.id, file.name);
-        const fileSegment = processFileContent(
-          fileData.content,
-          fileData.html,
-          file.name,
-        );
-
-        // Each file becomes exactly one segment
-        totalWords += fileSegment.wordCount;
-        segments.push({
-          id: `segment-${index + 1}`,
-          label: file.name || `File ${index + 1}`,
-          wordCount: fileSegment.wordCount,
-          estimatedMinutes: Math.max(
-            1,
-            Math.round(fileSegment.wordCount / WORDS_PER_MINUTE),
-          ),
-          text: fileSegment.text,
-          html: fileSegment.html,
-          fileId: file.id,
-          fileName: file.name,
-        });
-      } catch (fileError) {
-        console.error("[driveService] Failed to process file:", {
-          fileId: file.id,
-          fileName: file.name,
-          error: fileError.message,
-        });
-        // Add a placeholder segment for files that couldn't be processed
+      const fileType = getFileType(file.name);
+      
+      // For audio, video, and image files, skip content fetching and create segment with links
+      if (fileType === "audio" || fileType === "video" || fileType === "image") {
+        const viewUrl = `https://drive.google.com/file/d/${file.id}/view`;
+        const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
+        
         segments.push({
           id: `segment-${index + 1}`,
           label: file.name || `File ${index + 1}`,
           wordCount: 0,
           estimatedMinutes: 0,
-          text: `Unable to load content from file: ${file.name || file.id}`,
+          text: `This is a ${fileType} file. [View in Google Drive](${viewUrl}) or [Download](${downloadUrl})`,
           html: null,
           fileId: file.id,
           fileName: file.name,
+          fileType,
+          viewUrl,
+          downloadUrl,
         });
+      } else {
+        // For text/document files, try to fetch content
+        try {
+          const fileData = await fetchFileContent(file.id, file.name);
+          const fileSegment = processFileContent(
+            fileData.content,
+            fileData.html,
+            file.name,
+          );
+
+          // Each file becomes exactly one segment
+          totalWords += fileSegment.wordCount;
+          segments.push({
+            id: `segment-${index + 1}`,
+            label: file.name || `File ${index + 1}`,
+            wordCount: fileSegment.wordCount,
+            estimatedMinutes: Math.max(
+              1,
+              Math.round(fileSegment.wordCount / WORDS_PER_MINUTE),
+            ),
+            text: fileSegment.text,
+            html: fileSegment.html,
+            fileId: file.id,
+            fileName: file.name,
+            fileType,
+          });
+        } catch (fileError) {
+          console.error("[driveService] Failed to process file:", {
+            fileId: file.id,
+            fileName: file.name,
+            error: fileError.message,
+          });
+          // Add a placeholder segment for files that couldn't be processed
+          const viewUrl = `https://drive.google.com/file/d/${file.id}/view`;
+          const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
+          segments.push({
+            id: `segment-${index + 1}`,
+            label: file.name || `File ${index + 1}`,
+            wordCount: 0,
+            estimatedMinutes: 0,
+            text: `Unable to load content from file: ${file.name || file.id}. [View in Google Drive](${viewUrl}) or [Download](${downloadUrl})`,
+            html: null,
+            fileId: file.id,
+            fileName: file.name,
+            fileType,
+            viewUrl,
+            downloadUrl,
+          });
+        }
       }
     }
 
