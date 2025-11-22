@@ -36,12 +36,46 @@ const extractFolderId = (url) => {
 };
 
 /**
+ * Clean file name - remove extra text like "Shared", "Owner", etc.
+ */
+const cleanFileName = (fileName) => {
+  if (!fileName) return "";
+  
+  // Remove common suffixes that Google Drive adds
+  const cleaned = fileName
+    .replace(/Shared$/i, '')
+    .replace(/Owner.*$/i, '')
+    .replace(/hidden.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  // Extract just the filename part (before any extra text)
+  // Look for pattern: filename.extension
+  const match = cleaned.match(/^([^\s]+\.\w{2,5})/);
+  if (match) {
+    return match[1];
+  }
+  
+  return cleaned;
+};
+
+/**
  * Determine file type from file name
  */
 const getFileType = (fileName) => {
   if (!fileName) return "unknown";
   
-  const extension = fileName.split('.').pop()?.toLowerCase() || '';
+  // Clean the filename first
+  const cleaned = cleanFileName(fileName);
+  
+  // Extract extension (handle cases like "m4aSh" -> "m4a")
+  const parts = cleaned.split('.');
+  if (parts.length < 2) return "unknown";
+  
+  let extension = parts.pop()?.toLowerCase() || '';
+  
+  // Remove any trailing non-letter characters (e.g., "m4aSh" -> "m4a")
+  extension = extension.replace(/[^a-z0-9].*$/, '');
   
   const audioExtensions = ['m4a', 'mp3', 'wav', 'ogg', 'aac', 'flac', 'wma'];
   const videoExtensions = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'];
@@ -415,6 +449,11 @@ const listFolderFiles = async (folderId) => {
           fileName = element.getAttribute('aria-label') || 
                     element.getAttribute('title') || 
                     null;
+        }
+        
+        // Clean the file name to remove extra text
+        if (fileName) {
+          fileName = cleanFileName(fileName);
         }
         
         if (fileId && !seenIds.has(fileId)) {
