@@ -1,5 +1,4 @@
-import { processArticle } from "../server/src/services/articleService.js";
-import { processVideo } from "../server/src/services/videoService.v2.js";
+import { processContent } from "../server/src/contentTypes/index.js";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -20,14 +19,9 @@ const getHtmlPath = () => {
   }
 };
 
-const isYouTubeLink = (url) => /(youtube\.com|youtu\.be)/i.test(url);
-
 const getTrainingTitle = async (sourceUrl) => {
   try {
-    const contentType = isYouTubeLink(sourceUrl) ? "video" : "article";
-    const payload = contentType === "video"
-      ? await processVideo(sourceUrl)
-      : await processArticle(sourceUrl);
+    const payload = await processContent(sourceUrl);
     return payload.title || null;
   } catch (error) {
     console.error("[html.mjs] Failed to get training title:", error.message);
