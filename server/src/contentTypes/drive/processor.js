@@ -364,33 +364,90 @@ const listFolderFiles = async (folderId) => {
       }
     }
     
-    // Also try to extract from data attributes in the DOM
-    if (files.length === 0) {
-      const dom = new JSDOM(html, { url: folderUrl });
-      const document = dom.window.document;
-      
-      // Look for links to files
-      const fileLinks = document.querySelectorAll('a[href*="/file/d/"]');
-      fileLinks.forEach((link) => {
-        const href = link.getAttribute('href');
-        const fileIdMatch = href.match(/\/file\/d\/([a-zA-Z0-9_-]{25,33})/);
-        if (fileIdMatch) {
-          const fileId = fileIdMatch[1];
-          if (isValidFileId(fileId, folderId) && !seenIds.has(fileId)) {
-            seenIds.add(fileId);
-            const fileName = link.textContent?.trim() || 
-                            link.getAttribute('aria-label') || 
-                            link.getAttribute('title') ||
-                            `File ${files.length + 1}`;
-            
-            files.push({
-              id: fileId,
-              name: fileName,
-            });
+    // Extract from data-id attributes in the DOM (primary method for Google Drive)
+    const dom = new JSDOM(html, { url: folderUrl });
+    const document = dom.window.document;
+    
+    // Look for elements with data-id attributes (Google Drive uses these for file IDs)
+    const elementsWithDataId = document.querySelectorAll('[data-id]');
+    elementsWithDataId.forEach((element) => {
+      const fileId = element.getAttribute('data-id');
+      if (isValidFileId(fileId, folderId) && !seenIds.has(fileId)) {
+        // Try to extract file name from the element or nearby elements
+        let fileName = null;
+        
+        // Check the element's text content
+        const textContent = element.textContent?.trim() || '';
+        if (textContent && textContent.length > 0 && textContent.length < 200) {
+          // Check if it looks like a file name (has extension, not just numbers)
+          if (textContent.includes('.') && !/^\d+$/.test(textContent)) {
+            // Extract just the file name part (might have extra text like "Shared", "Owner", etc.)
+            const nameMatch = textContent.match(/([^\s]+\.\w{2,5})/);
+            if (nameMatch) {
+              fileName = nameMatch[1];
+            } else {
+              // Take first reasonable chunk
+              const parts = textContent.split(/\s+/);
+              for (const part of parts) {
+                if (part.includes('.') && part.length > 3 && part.length < 100) {
+                  fileName = part;
+                  break;
+                }
+              }
+            }
           }
         }
-      });
-    }
+        
+        // If no name found, check parent or sibling elements
+        if (!fileName) {
+          const parent = element.parentElement;
+          if (parent) {
+            const parentText = parent.textContent?.trim() || '';
+            const nameMatch = parentText.match(/([^\s]+\.\w{2,5})/);
+            if (nameMatch) {
+              fileName = nameMatch[1];
+            }
+          }
+        }
+        
+        // If still no name, check for aria-label or title
+        if (!fileName) {
+          fileName = element.getAttribute('aria-label') || 
+                    element.getAttribute('title') || 
+                    null;
+        }
+        
+        if (fileId && !seenIds.has(fileId)) {
+          seenIds.add(fileId);
+          files.push({
+            id: fileId,
+            name: fileName || `File ${files.length + 1}`,
+          });
+        }
+      }
+    });
+    
+    // Also look for links to files as fallback
+    const fileLinks = document.querySelectorAll('a[href*="/file/d/"]');
+    fileLinks.forEach((link) => {
+      const href = link.getAttribute('href');
+      const fileIdMatch = href.match(/\/file\/d\/([a-zA-Z0-9_-]{25,33})/);
+      if (fileIdMatch) {
+        const fileId = fileIdMatch[1];
+        if (isValidFileId(fileId, folderId) && !seenIds.has(fileId)) {
+          seenIds.add(fileId);
+          const fileName = link.textContent?.trim() || 
+                          link.getAttribute('aria-label') || 
+                          link.getAttribute('title') ||
+                          `File ${files.length + 1}`;
+          
+          files.push({
+            id: fileId,
+            name: fileName,
+          });
+        }
+      }
+    });
 
     // Remove duplicates (shouldn't be needed but just in case)
     const uniqueFiles = [];
