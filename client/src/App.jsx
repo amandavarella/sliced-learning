@@ -1,6 +1,70 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { renderSegment, getTrainingDescription } from "./contentTypes/index.js";
+import {
+  renderSegment,
+  getTrainingDescription,
+  getContentTypeLabel,
+} from "./contentTypes/index.js";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArticleIcon,
+  CheckIcon,
+  ChevronIcon,
+  ClockIcon,
+  CopyIcon,
+  FolderIcon,
+  LinkIcon,
+  LogoMark,
+  PlusIcon,
+  ShareIcon,
+  TrophyIcon,
+  VideoIcon,
+} from "./components/Icons.jsx";
 import "./App.css";
+
+const DEFAULT_TITLE = "Sliced Learning";
+
+const EXAMPLES = [
+  {
+    label: "Paul Graham essay",
+    url: "https://paulgraham.com/greatwork.html",
+    type: "article",
+  },
+  {
+    label: "Wikipedia article",
+    url: "https://en.wikipedia.org/wiki/Spaced_repetition",
+    type: "article",
+  },
+  {
+    label: "Stanford commencement talk",
+    url: "https://www.youtube.com/watch?v=UF8uR6Z6KLc",
+    type: "video",
+  },
+];
+
+const TYPE_ICONS = {
+  article: ArticleIcon,
+  video: VideoIcon,
+  drive: FolderIcon,
+};
+
+const ContentTypeIcon = ({ type }) => {
+  const Icon = TYPE_ICONS[type] ?? ArticleIcon;
+  return <Icon />;
+};
+
+const isEditableTarget = (target) => {
+  if (!target) {
+    return false;
+  }
+  const tagName = target.tagName;
+  return (
+    tagName === "INPUT" ||
+    tagName === "TEXTAREA" ||
+    tagName === "SELECT" ||
+    target.isContentEditable
+  );
+};
 
 const defaultState = {
   training: null,
@@ -42,8 +106,11 @@ function App() {
     defaultState,
   );
   const [copyStatus, setCopyStatus] = useState("");
+  const [segmentsOpen, setSegmentsOpen] = useState(false);
   const hydratingRef = useRef(false);
   const lastPersistRef = useRef(null);
+  const segmentViewRef = useRef(null);
+  const previousIndexRef = useRef(null);
 
   const activeSegment = useMemo(() => {
     if (!training) {
@@ -94,10 +161,8 @@ function App() {
     [setTrainingState, setUrl, setCopyStatus],
   );
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-
-    if (!url.trim()) {
+  const processUrl = async (rawUrl) => {
+    if (!rawUrl.trim()) {
       setError("Please paste a valid article, YouTube, or Google Drive folder link.");
       return;
     }
@@ -105,7 +170,7 @@ function App() {
     try {
       setError("");
       setLoading(true);
-      const trimmedUrl = url.trim();
+      const trimmedUrl = rawUrl.trim();
       const response = await fetch("/api/process", {
         method: "POST",
         headers: {
@@ -129,7 +194,17 @@ function App() {
     }
   };
 
-  const handleNext = () => {
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    processUrl(url);
+  };
+
+  const handleExample = (exampleUrl) => {
+    setUrl(exampleUrl);
+    processUrl(exampleUrl);
+  };
+
+  const handleNext = useCallback(() => {
     if (!training) {
       return;
     }
@@ -162,9 +237,9 @@ function App() {
         activeIndex: nextActiveIndex,
       };
     });
-  };
+  }, [training]);
 
-  const handlePrevious = () => {
+  const handlePrevious = useCallback(() => {
     if (!training) {
       return;
     }
@@ -196,9 +271,10 @@ function App() {
         activeIndex: nextActiveIndex,
       };
     });
-  };
+  }, [training]);
 
   const handleSelectSegment = (index) => {
+    setSegmentsOpen(false);
     if (!training) {
       return;
     }
@@ -223,7 +299,62 @@ function App() {
     setUrl("");
     setError("");
     setCopyStatus("");
+    setSegmentsOpen(false);
   };
+
+  // Keyboard navigation: arrow keys move between segments
+  useEffect(() => {
+    if (!training) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        isEditableTarget(event.target)
+      ) {
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        handleNext();
+      } else if (event.key === "ArrowLeft") {
+        handlePrevious();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [training, handleNext, handlePrevious]);
+
+  // Bring the new segment into view when the learner moves between segments
+  useEffect(() => {
+    if (!training) {
+      previousIndexRef.current = null;
+      return;
+    }
+
+    const previousIndex = previousIndexRef.current;
+    previousIndexRef.current = activeIndex;
+
+    if (previousIndex === null || previousIndex === activeIndex) {
+      return;
+    }
+
+    const node = segmentViewRef.current;
+    if (node && node.getBoundingClientRect().top < 0) {
+      const prefersReducedMotion = window.matchMedia?.(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      node.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    }
+  }, [training, activeIndex]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -424,7 +555,7 @@ function App() {
       updateMetaName("twitter:description", description);
     } else {
       // Reset to default title when no training is loaded
-      document.title = "Vite + React";
+      document.title = DEFAULT_TITLE;
     }
   }, [training, activeIndex]);
 
@@ -539,159 +670,384 @@ function App() {
     }
   }, [shareLink]);
 
+  const handleShare = useCallback(async () => {
+    if (!shareLink) {
+      return;
+    }
+
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: training?.title || DEFAULT_TITLE, url: shareLink });
+        return;
+      } catch (shareError) {
+        if (shareError?.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    handleCopyShareLink();
+  }, [shareLink, training, handleCopyShareLink]);
+
+  const totalSegments = training?.segments.length ?? 0;
+  const completedCount = completed.filter(Boolean).length;
+  const allDone = totalSegments > 0 && completedCount === totalSegments;
+
   const progress = useMemo(() => {
-    if (!training) {
+    if (!totalSegments) {
       return 0;
     }
-    const completedCount = completed.filter(Boolean).length;
-    if (!training.segments.length) {
-      return 0;
+    return Math.round((completedCount / totalSegments) * 100);
+  }, [completedCount, totalSegments]);
+
+  const minutesLeft = useMemo(() => {
+    const perSegment = Number(training?.segmentMinutes);
+    if (!Number.isFinite(perSegment) || perSegment <= 0) {
+      return null;
     }
-    return Math.round((completedCount / training.segments.length) * 100);
-  }, [completed, training]);
+    return Math.round((totalSegments - completedCount) * perSegment);
+  }, [training, totalSegments, completedCount]);
+
+  const urlForm = (
+    <form className="input-form" onSubmit={handleSubmit}>
+      <label htmlFor="url-input">
+        Paste an article, YouTube, or Google Drive folder link
+      </label>
+      <div className="field-row">
+        <span className="field-icon">
+          <LinkIcon />
+        </span>
+        <input
+          id="url-input"
+          name="url"
+          type="text"
+          inputMode="url"
+          autoComplete="off"
+          autoCapitalize="off"
+          spellCheck="false"
+          placeholder="https://..."
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          disabled={loading}
+        />
+        <button type="submit" disabled={loading}>
+          {loading ? (
+            <>
+              <span className="button-spinner" aria-hidden="true" />
+              <span className="visually-hidden">Processing</span>
+            </>
+          ) : (
+            "Slice"
+          )}
+        </button>
+      </div>
+    </form>
+  );
+
+  const errorMessage = error ? (
+    <p className="error-message" role="alert">
+      {error}
+    </p>
+  ) : null;
+
+  if (!training) {
+    return (
+      <div className="app-shell is-landing">
+        <header className="topbar">
+          <div className="brand">
+            <LogoMark />
+            <span>Sliced Learning</span>
+          </div>
+        </header>
+
+        <main className="landing">
+          <section className="hero">
+            <span className="eyebrow">Learn in focused slices</span>
+            <h1>
+              Turn long reads and videos into{" "}
+              <span className="gradient-text">bite-sized lessons</span>
+            </h1>
+            <p className="hero-lede">
+              Paste a link and get short, timed sections you can finish one at a
+              time. Your progress lives in the link, so you can pick up on any
+              device.
+            </p>
+
+            <div className="hero-form">
+              {urlForm}
+              {errorMessage}
+            </div>
+
+            {loading ? (
+              <div className="loading-card" role="status">
+                <span className="loading-dot" aria-hidden="true" />
+                <div>
+                  <strong>Slicing your content</strong>
+                  <p>Long videos and folders can take a few seconds.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="examples">
+                <span className="examples-label">Try one:</span>
+                {EXAMPLES.map((example) => (
+                  <button
+                    key={example.url}
+                    type="button"
+                    className="example-chip"
+                    onClick={() => handleExample(example.url)}
+                  >
+                    <ContentTypeIcon type={example.type} />
+                    {example.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="feature-grid" aria-label="Supported content">
+            <article className="feature-card">
+              <span className="feature-icon is-article">
+                <ArticleIcon />
+              </span>
+              <h2>Articles</h2>
+              <p>Long reads become ~2 minute sections with images, code, and quotes intact.</p>
+            </article>
+            <article className="feature-card">
+              <span className="feature-icon is-video">
+                <VideoIcon />
+              </span>
+              <h2>YouTube</h2>
+              <p>Videos split into 10 minute chapters that start and stop at the right moment.</p>
+            </article>
+            <article className="feature-card">
+              <span className="feature-icon is-drive">
+                <FolderIcon />
+              </span>
+              <h2>Google Drive</h2>
+              <p>Shared folders turn into a playlist, one file per section.</p>
+            </article>
+          </section>
+
+          <section className="steps" aria-label="How it works">
+            <div className="step">
+              <span className="step-number">1</span>
+              <div>
+                <h3>Paste a link</h3>
+                <p>Any public article, YouTube video, or Drive folder.</p>
+              </div>
+            </div>
+            <div className="step">
+              <span className="step-number">2</span>
+              <div>
+                <h3>Learn one slice at a time</h3>
+                <p>Finish a section, tick it off, and move on.</p>
+              </div>
+            </div>
+            <div className="step">
+              <span className="step-number">3</span>
+              <div>
+                <h3>Share your spot</h3>
+                <p>Copy the link to continue later or send it to a friend.</p>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  const isLastSegment = activeIndex === totalSegments - 1;
+  const typeLabel = getContentTypeLabel(training.type);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell is-learning">
       <aside className="sidebar">
-        <h1>Sliced Learning</h1>
-        <form className="input-form" onSubmit={handleSubmit}>
-          <label htmlFor="url-input">Paste an article, YouTube, or Google Drive folder link</label>
-          <div className="field-row">
-            <input
-              id="url-input"
-              name="url"
-              placeholder="https://..."
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              disabled={loading}
-            />
-            <button type="submit" disabled={loading}>
-              {loading ? (
-                <>
-                  <span className="button-spinner" aria-hidden="true" />
-                  <span className="visually-hidden">Processing</span>
-                </>
-              ) : (
-                "Slice"
-              )}
-            </button>
+        <div className="sidebar-top">
+          <div className="brand">
+            <LogoMark />
+            <span>Sliced Learning</span>
           </div>
-        </form>
-        {error && <p className="error-message">{error}</p>}
-        {training && (
-          <div className="progress-panel">
-            <div className="progress-header">
-              <h2>Progress</h2>
-              {shareLink ? (
-                <div className="progress-actions">
+          <button
+            type="button"
+            className="new-button"
+            onClick={handleReset}
+            aria-label="Start a new training"
+          >
+            <PlusIcon />
+            <span>New</span>
+          </button>
+        </div>
+        <div className="sidebar-form">{urlForm}</div>
+        {errorMessage}
+        <div className="progress-panel">
+          <div className="progress-header">
+            <h2>Your progress</h2>
+            <div className="progress-actions">
+              {shareLink && (
+                <button
+                  type="button"
+                  className="copy-link-button"
+                  onClick={handleCopyShareLink}
+                  aria-label="Copy share link"
+                  title="Copy share link"
+                >
+                  <CopyIcon />
+                </button>
+              )}
+              <span className="progress-percent">{progress}%</span>
+            </div>
+          </div>
+          {copyStatus && shareLink && (
+            <p className="copy-feedback" role="status">
+              {copyStatus}
+            </p>
+          )}
+          <div
+            className="progress-bar"
+            role="progressbar"
+            aria-label="Training progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+          >
+            <div className="progress-value" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="progress-stats">
+            <CheckIcon />
+            {completedCount} of {totalSegments} done
+            {minutesLeft !== null && minutesLeft > 0 && (
+              <>
+                <span className="dot-separator" aria-hidden="true">·</span>
+                <ClockIcon />~{minutesLeft} min left
+              </>
+            )}
+          </p>
+          <button
+            type="button"
+            className="segments-toggle"
+            aria-expanded={segmentsOpen}
+            aria-controls="segments-list"
+            onClick={() => setSegmentsOpen((open) => !open)}
+          >
+            {segmentsOpen ? "Hide sections" : `All ${totalSegments} sections`}
+            <ChevronIcon />
+          </button>
+          <ul
+            id="segments-list"
+            className={`segments-list${segmentsOpen ? " is-open" : ""}`}
+          >
+            {training.segments.map((segment, index) => {
+              const status = completed[index]
+                ? "completed"
+                : index === activeIndex
+                ? "active"
+                : "pending";
+              const isCurrent = index === activeIndex;
+              return (
+                <li
+                  key={segment.id}
+                  className={`segment-item ${status}${isCurrent ? " is-current" : ""}`}
+                >
                   <button
                     type="button"
-                    className="copy-link-button"
-                    onClick={handleCopyShareLink}
-                    aria-label="Copy share link"
-                    title="Copy share link"
+                    onClick={() => handleSelectSegment(index)}
+                    className="segment-trigger"
+                    aria-current={isCurrent ? "step" : undefined}
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                      <path d="M16 1H4a3 3 0 0 0-3 3v12h2V4a1 1 0 0 1 1-1h12z" />
-                      <path d="M20 5H8a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3zm1 15a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1z" />
-                    </svg>
+                    <span className="segment-index">{index + 1}</span>
+                    <span className="segment-label">{segment.label}</span>
+                    {completed[index] && (
+                      <span className="segment-check" aria-label="Completed">
+                        ✓
+                      </span>
+                    )}
                   </button>
-                  <span>{progress}%</span>
-                </div>
-              ) : (
-                <span>{progress}%</span>
-              )}
-            </div>
-            {copyStatus && shareLink && (
-              <p className="copy-feedback">{copyStatus}</p>
-            )}
-            <div className="progress-bar">
-              <div className="progress-value" style={{ width: `${progress}%` }} />
-            </div>
-            <ul className="segments-list">
-              {training.segments.map((segment, index) => {
-                const status = completed[index]
-                  ? "completed"
-                  : index === activeIndex
-                  ? "active"
-                  : "pending";
-                return (
-                  <li
-                    key={segment.id}
-                    className={`segment-item ${status}`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleSelectSegment(index)}
-                      className="segment-trigger"
-                    >
-                      <span>{segment.label}</span>
-                      {completed[index] && <span className="segment-check">✓</span>}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <button className="reset-button" type="button" onClick={handleReset}>
-              Start over
-            </button>
-          </div>
-        )}
+                </li>
+              );
+            })}
+          </ul>
+          <button className="reset-button" type="button" onClick={handleReset}>
+            Start over
+          </button>
+        </div>
       </aside>
 
       <main className="content">
-        {training ? (
-          <div className="segment-view">
-            <header className="segment-header">
-              <div>
-                <h2>{training.title}</h2>
-                <p className="segment-meta">
-                  {getTrainingDescription(training)}
-                </p>
-              </div>
-              <span>
-                Segment {activeIndex + 1} / {training.segments.length}
-              </span>
-            </header>
-            <section className="segment-body">
-              <h3>{activeSegment.label}</h3>
-              {renderSegment(training.type, activeSegment, training)}
-            </section>
-            <footer className="segment-footer">
-              <button
-                type="button"
-                onClick={handlePrevious}
-                disabled={!training.segments.length || activeIndex === 0}
-              >
-                Previous
+        {allDone && (
+          <section className="completion-banner" role="status">
+            <div className="confetti" aria-hidden="true">
+              {Array.from({ length: 14 }, (_, index) => (
+                <span key={index} />
+              ))}
+            </div>
+            <span className="completion-icon">
+              <TrophyIcon />
+            </span>
+            <div className="completion-text">
+              <strong>You finished every section!</strong>
+              <p>Share your win or slice something new.</p>
+            </div>
+            <div className="completion-actions">
+              <button type="button" className="ghost-button" onClick={handleShare}>
+                <ShareIcon />
+                Share
               </button>
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={
-                  training.segments.length === 0 ||
-                  (activeIndex === training.segments.length - 1 &&
-                    completed[activeIndex])
-                }
-              >
-                {activeIndex === training.segments.length - 1
-                  ? completed[activeIndex]
-                    ? "Completed"
-                    : "Finish segment"
-                  : "Next"}
+              <button type="button" className="primary-button" onClick={handleReset}>
+                <PlusIcon />
+                New training
               </button>
-            </footer>
-          </div>
-        ) : (
-          <div className="placeholder">
-            <h2>Create your first training</h2>
-            <p>
-              Paste a link to a long-form article, a YouTube video, or a Google Drive folder and we will
-              slice it into bite-sized learning modules. Track your progress on
-              the left as you move through each segment.
-            </p>
-          </div>
+            </div>
+          </section>
         )}
+        <div className="segment-view" ref={segmentViewRef}>
+          <header className="segment-header">
+            <div className="segment-heading">
+              {typeLabel && (
+                <span className={`type-pill is-${training.type}`}>
+                  <ContentTypeIcon type={training.type} />
+                  {typeLabel}
+                </span>
+              )}
+              <h2>{training.title}</h2>
+              <p className="segment-meta">{getTrainingDescription(training)}</p>
+            </div>
+            <span className="segment-counter">
+              Segment {activeIndex + 1} / {totalSegments}
+            </span>
+          </header>
+          <section className="segment-body" key={activeIndex}>
+            <h3>{activeSegment?.label}</h3>
+            {activeSegment && renderSegment(training.type, activeSegment, training)}
+          </section>
+          <footer className="segment-footer">
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={handlePrevious}
+              disabled={!totalSegments || activeIndex === 0}
+            >
+              <ArrowLeftIcon />
+              Previous
+            </button>
+            <span className="keyboard-hint" aria-hidden="true">
+              <kbd>←</kbd>
+              <kbd>→</kbd> to navigate
+            </span>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleNext}
+              disabled={totalSegments === 0 || (isLastSegment && completed[activeIndex])}
+            >
+              {isLastSegment
+                ? completed[activeIndex]
+                  ? "Completed"
+                  : "Finish segment"
+                : "Next"}
+              {isLastSegment ? <CheckIcon /> : <ArrowRightIcon />}
+            </button>
+          </footer>
+        </div>
       </main>
     </div>
   );

@@ -17,18 +17,31 @@ export const renderDrive = (segment) => {
     
     return (
       <div className="drive-segment-content">
-        <p>This is an audio file: <strong>{fileName}</strong></p>
-        <p>
-          <a href={viewUrl} target="_blank" rel="noopener noreferrer">
-            Listen in Google Drive
-          </a>
-          {" | "}
-          <a href={downloadUrl} target="_blank" rel="noopener noreferrer">
-            Download
-          </a>
-        </p>
+        <div className="drive-audio-card">
+          <p>
+            Audio file: <strong>{fileName}</strong>
+          </p>
+          <div className="drive-audio-actions">
+            <a
+              className="primary-button"
+              href={viewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Listen in Google Drive
+            </a>
+            <a
+              className="ghost-button"
+              href={downloadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Download
+            </a>
+          </div>
+        </div>
         {segment?.text && (
-          <div style={{ marginTop: "1rem" }}>
+          <div className="drive-text">
             {segment.text.split(/\n{2,}/).map((paragraph, index) => (
               <p key={`${segment.id}-paragraph-${index}`}>{paragraph}</p>
             ))}

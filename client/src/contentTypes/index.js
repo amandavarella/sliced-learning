@@ -52,3 +52,12 @@ export const getTrainingDescription = (training) => {
   return contentType.getDescription ? contentType.getDescription(training) : "";
 };
 
+
+/**
+ * Gets a human-readable label for a content type
+ * @param {string} type - The content type
+ * @returns {string} The label (e.g., "Article")
+ */
+export const getContentTypeLabel = (type) => {
+  return getContentType(type)?.label || "";
+};
