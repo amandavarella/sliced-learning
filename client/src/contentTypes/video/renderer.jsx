@@ -49,17 +49,20 @@ export const renderVideo = (segment, training) => {
         </p>
       )}
       <div className="video-segment-details">
-        <div>
-          <strong>Start:</strong> {segment.cue.start}
+        <div className="video-chip">
+          <span className="video-chip-label">Start</span>
+          <strong>{segment.cue.start}</strong>
         </div>
-        <div>
-          <strong>End:</strong> {segment.cue.end}
+        <div className="video-chip">
+          <span className="video-chip-label">End</span>
+          <strong>{segment.cue.end}</strong>
         </div>
-        <div>
-          <strong>Duration:</strong> {timeLabel(segment.durationSeconds)}
+        <div className="video-chip">
+          <span className="video-chip-label">Duration</span>
+          <strong>{timeLabel(segment.durationSeconds)}</strong>
         </div>
         <p className="video-segment-note">
-          Watch this segment before advancing. Use the timestamps above to skip directly.
+          Watch this segment before advancing. The player starts and stops at the right moment.
         </p>
       </div>
     </div>
