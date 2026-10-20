@@ -20,6 +20,8 @@ import {
   TrophyIcon,
   VideoIcon,
 } from "./components/Icons.jsx";
+import ReaderSettings from "./components/ReaderSettings.jsx";
+import { useReaderSettings } from "./hooks/useReaderSettings.js";
 import "./App.css";
 
 const DEFAULT_TITLE = "Sliced Learning";
@@ -107,6 +109,7 @@ function App() {
   );
   const [copyStatus, setCopyStatus] = useState("");
   const [segmentsOpen, setSegmentsOpen] = useState(false);
+  const [readerSettings, updateReaderSettings] = useReaderSettings();
   const hydratingRef = useRef(false);
   const lastPersistRef = useRef(null);
   const segmentViewRef = useRef(null);
@@ -758,6 +761,11 @@ function App() {
             <LogoMark />
             <span>Sliced Learning</span>
           </div>
+          <ReaderSettings
+            settings={readerSettings}
+            onChange={updateReaderSettings}
+            showTypography={false}
+          />
         </header>
 
         <main className="landing">
@@ -867,15 +875,18 @@ function App() {
             <LogoMark />
             <span>Sliced Learning</span>
           </div>
-          <button
-            type="button"
-            className="new-button"
-            onClick={handleReset}
-            aria-label="Start a new training"
-          >
-            <PlusIcon />
-            <span>New</span>
-          </button>
+          <div className="sidebar-actions">
+            <ReaderSettings settings={readerSettings} onChange={updateReaderSettings} />
+            <button
+              type="button"
+              className="new-button"
+              onClick={handleReset}
+              aria-label="Start a new training"
+            >
+              <PlusIcon />
+              <span>New</span>
+            </button>
+          </div>
         </div>
         <div className="sidebar-form">{urlForm}</div>
         {errorMessage}
