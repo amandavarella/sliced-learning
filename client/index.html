@@ -9,8 +9,18 @@
     <meta name="theme-color" content="#0f0d16" media="(prefers-color-scheme: dark)" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Literata:ital,opsz,wght@0,7..72,400..700;1,7..72,400..700&display=swap" rel="stylesheet" />
     <title>Sliced Learning</title>
+    <script>
+      // Apply saved display settings before first paint to avoid a theme flash
+      try {
+        var saved = JSON.parse(localStorage.getItem("sliced-learning:reader-settings") || "{}");
+        var root = document.documentElement;
+        if (saved.theme && saved.theme !== "system") root.dataset.theme = saved.theme;
+        if (saved.font) root.dataset.readingFont = saved.font;
+        if (saved.size !== undefined) root.dataset.textSize = saved.size;
+      } catch (error) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
