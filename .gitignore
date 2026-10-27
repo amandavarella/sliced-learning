@@ -9,3 +9,5 @@
 # Dependency directories
 node_modules/
 **/node_modules/
+
+AGENTS.local.md
