@@ -342,10 +342,27 @@ const normalizeArticleContent = (htmlContent, baseUrl) => {
     normalizePictureSources(picture, baseUrl);
   });
 
+  // Resolve video and video source URLs so embedded clips play off-site
+  const videoElements = document.querySelectorAll("video, video source");
+  videoElements.forEach((element) => {
+    ["src", "poster"].forEach((attribute) => {
+      const value = element.getAttribute(attribute);
+      if (!value) {
+        return;
+      }
+      const resolved = resolveImageUrl(value, baseUrl);
+      if (resolved) {
+        element.setAttribute(attribute, resolved);
+      } else {
+        element.removeAttribute(attribute);
+      }
+    });
+  });
+
   // Remove empty figures
   const figures = document.querySelectorAll("figure");
   figures.forEach((figure) => {
-    if (!figure.querySelector("img")) {
+    if (!figure.querySelector("img, video")) {
       figure.remove();
     }
   });

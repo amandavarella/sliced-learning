@@ -131,3 +131,53 @@ test("processArticle normalizes image sources", async (t) => {
     "figure caption should remain in output",
   );
 });
+
+test("processArticle keeps embedded videos inside figures", async (t) => {
+  const originalGet = axios.get;
+  axios.get = async () => ({
+    data: `<!DOCTYPE html>
+<html lang="en">
+  <head><title>Video Article</title></head>
+  <body>
+    <article>
+      <h1>Article With Video Figures</h1>
+      <p>
+        The opening paragraph gives the readability heuristic enough prose to
+        score this block as the main content of the page before the figure.
+      </p>
+      <figure>
+        <video autoplay controls playsinline muted loop src="/files/demo.mp4"></video>
+        <figcaption>Demo animation</figcaption>
+      </figure>
+      <p>
+        A closing paragraph follows the figure so the video sits in the middle
+        of the article body, which mirrors how research posts embed clips.
+      </p>
+    </article>
+  </body>
+</html>`,
+  });
+
+  t.after(() => {
+    axios.get = originalGet;
+  });
+
+  const result = await processArticle("https://example.com/articles/video");
+  const combinedHtml = result.segments
+    .map((segment) => segment.html || "")
+    .join("");
+
+  assert.match(
+    combinedHtml,
+    /<figure>[\s\S]*<video[^>]+src="https:\/\/example.com\/files\/demo.mp4"/,
+    "video should be kept with an absolute src",
+  );
+
+  assert.match(combinedHtml, /<video[^>]+controls/, "video controls should be kept");
+
+  assert.match(
+    combinedHtml,
+    /Demo animation/,
+    "video figure caption should be retained",
+  );
+});
