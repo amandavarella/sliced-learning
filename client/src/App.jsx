@@ -786,10 +786,15 @@ function App() {
     return (
       <div className="app-shell is-landing">
         <header className="topbar">
-          <div className="brand">
+          <button
+            type="button"
+            className="brand brand-button"
+            onClick={handleReset}
+            aria-label="Sliced Learning home"
+          >
             <LogoMark />
             <span>Sliced Learning</span>
-          </div>
+          </button>
           <ReaderSettings
             settings={readerSettings}
             onChange={updateReaderSettings}
@@ -900,10 +905,15 @@ function App() {
     <div className="app-shell is-learning">
       <aside className="sidebar">
         <div className="sidebar-top">
-          <div className="brand">
+          <button
+            type="button"
+            className="brand brand-button"
+            onClick={handleReset}
+            aria-label="Sliced Learning home"
+          >
             <LogoMark />
             <span>Sliced Learning</span>
-          </div>
+          </button>
           <div className="sidebar-actions">
             <ReaderSettings settings={readerSettings} onChange={updateReaderSettings} />
             <button

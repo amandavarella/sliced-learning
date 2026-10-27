@@ -167,6 +167,14 @@ svg {
   color: var(--text);
 }
 
+.brand-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
 .logo-mark {
   width: 2rem;
   height: 2rem;
