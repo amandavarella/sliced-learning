@@ -670,8 +670,8 @@ function App() {
     return () => clearTimeout(timerId);
   }, [copyStatus]);
 
-  const handleCopyShareLink = useCallback(async () => {
-    if (!shareLink) {
+  const copyLink = useCallback(async (link, successMessage) => {
+    if (!link) {
       return;
     }
 
@@ -681,19 +681,27 @@ function App() {
         navigator.clipboard &&
         typeof navigator.clipboard.writeText === "function"
       ) {
-        await navigator.clipboard.writeText(shareLink);
+        await navigator.clipboard.writeText(link);
       } else if (
         typeof window !== "undefined" &&
         typeof window.prompt === "function"
       ) {
-        window.prompt("Copy this link", shareLink);
+        window.prompt("Copy this link", link);
       }
-      setCopyStatus("Link copied");
+      setCopyStatus(successMessage);
     } catch (copyError) {
-      console.error("Unable to copy share link", copyError);
+      console.error("Unable to copy link", copyError);
       setCopyStatus("Unable to copy link");
     }
-  }, [shareLink]);
+  }, []);
+
+  const handleCopyShareLink = useCallback(() => {
+    copyLink(shareLink, "Link copied");
+  }, [copyLink, shareLink]);
+
+  const handleCopySourceLink = useCallback(() => {
+    copyLink(training?.sourceUrl, "Original link copied");
+  }, [copyLink, training]);
 
   const totalSegments = training?.segments.length ?? 0;
   const completedCount = completed.filter(Boolean).length;
@@ -736,9 +744,21 @@ function App() {
         Paste an article, YouTube, or Google Drive folder link
       </label>
       <div className="field-row">
-        <span className="field-icon">
-          <LinkIcon />
-        </span>
+        {training?.sourceUrl ? (
+          <button
+            type="button"
+            className="field-icon field-icon-button"
+            onClick={handleCopySourceLink}
+            aria-label="Copy original link"
+            title="Copy original link"
+          >
+            <LinkIcon />
+          </button>
+        ) : (
+          <span className="field-icon">
+            <LinkIcon />
+          </span>
+        )}
         <input
           id="url-input"
           name="url"
