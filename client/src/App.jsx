@@ -78,6 +78,14 @@ const normalizeCompleted = (segments = [], completed = []) => {
   return segments.map((_, index) => Boolean(completed[index]));
 };
 
+// The segment param only marks earlier segments done, so a finished
+// training also carries done=1 to keep the last segment completed
+const DONE_PARAM = "done";
+
+const isTrainingFinished = (completed = []) => {
+  return completed.length > 0 && completed.every(Boolean);
+};
+
 const segmentDurationMinutes = (segment, fallbackMinutes) => {
   const estimated = Number(segment?.estimatedMinutes);
   if (Number.isFinite(estimated) && estimated >= 0) {
@@ -399,6 +407,7 @@ function App() {
     // NEW FORMAT: source and segment parameters (deployment-agnostic)
     const source = params.get("source");
     const segmentParam = params.get("segment");
+    const finishedParam = params.get(DONE_PARAM) === "1";
 
     // OLD FORMAT: share ID for backward compatibility
     const shareId = params.get("share");
@@ -477,7 +486,7 @@ function App() {
           );
           const completedWithProgress = existingCompleted.map((isCompleted, index) => {
             // Mark all segments before the requested segment as completed
-            return index < validSegment ? true : isCompleted;
+            return finishedParam || index < validSegment ? true : isCompleted;
           });
 
           // Override the default activeIndex with the requested segment
@@ -514,16 +523,22 @@ function App() {
     if (training?.sourceUrl) {
       nextUrl.searchParams.set("source", training.sourceUrl);
       nextUrl.searchParams.set("segment", String(activeIndex));
+      if (isTrainingFinished(completed)) {
+        nextUrl.searchParams.set(DONE_PARAM, "1");
+      } else {
+        nextUrl.searchParams.delete(DONE_PARAM);
+      }
       // Clean up old format params
       nextUrl.searchParams.delete("share");
     } else {
       nextUrl.searchParams.delete("share");
       nextUrl.searchParams.delete("source");
       nextUrl.searchParams.delete("segment");
+      nextUrl.searchParams.delete(DONE_PARAM);
     }
 
     window.history.replaceState({}, "", nextUrl.toString());
-  }, [training, activeIndex]);
+  }, [training, activeIndex, completed]);
 
   // Update document title and meta tags when training is loaded
   useEffect(() => {
@@ -657,9 +672,12 @@ function App() {
       source: training.sourceUrl,
       segment: String(activeIndex),
     });
+    if (isTrainingFinished(completed)) {
+      params.set(DONE_PARAM, "1");
+    }
 
     return `${base}?${params.toString()}`;
-  }, [training, activeIndex]);
+  }, [training, activeIndex, completed]);
 
   useEffect(() => {
     if (!copyStatus) {
