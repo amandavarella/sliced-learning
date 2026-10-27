@@ -78,6 +78,19 @@ const normalizeCompleted = (segments = [], completed = []) => {
   return segments.map((_, index) => Boolean(completed[index]));
 };
 
+const segmentDurationMinutes = (segment, fallbackMinutes) => {
+  const estimated = Number(segment?.estimatedMinutes);
+  if (Number.isFinite(estimated) && estimated >= 0) {
+    return estimated;
+  }
+  const start = Number(segment?.startSeconds);
+  const end = Number(segment?.endSeconds);
+  if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+    return (end - start) / 60;
+  }
+  return fallbackMinutes;
+};
+
 const clampActiveIndex = (activeIndex = 0, segmentsLength = 0) => {
   if (!Number.isInteger(activeIndex)) {
     return 0;
@@ -704,12 +717,28 @@ function App() {
   }, [completedCount, totalSegments]);
 
   const minutesLeft = useMemo(() => {
-    const perSegment = Number(training?.segmentMinutes);
-    if (!Number.isFinite(perSegment) || perSegment <= 0) {
+    if (!training?.segments.length) {
       return null;
     }
-    return Math.round((totalSegments - completedCount) * perSegment);
-  }, [training, totalSegments, completedCount]);
+    const perSegment = Number(training.segmentMinutes);
+    const fallbackMinutes =
+      Number.isFinite(perSegment) && perSegment > 0 ? perSegment : null;
+
+    // Count unread segments from the reader's position onwards, using each
+    // segment's own length so the estimate moves with every step
+    let total = 0;
+    for (let index = activeIndex; index < training.segments.length; index += 1) {
+      if (completed[index]) {
+        continue;
+      }
+      const minutes = segmentDurationMinutes(training.segments[index], fallbackMinutes);
+      if (minutes === null) {
+        return null;
+      }
+      total += minutes;
+    }
+    return Math.round(total);
+  }, [training, activeIndex, completed]);
 
   const urlForm = (
     <form className="input-form" onSubmit={handleSubmit}>
