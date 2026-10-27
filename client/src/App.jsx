@@ -16,10 +16,10 @@ import {
   LinkIcon,
   LogoMark,
   PlusIcon,
-  ShareIcon,
   TrophyIcon,
   VideoIcon,
 } from "./components/Icons.jsx";
+import Confetti from "./components/Confetti.jsx";
 import ReaderSettings from "./components/ReaderSettings.jsx";
 import { useReaderSettings } from "./hooks/useReaderSettings.js";
 import "./App.css";
@@ -122,6 +122,7 @@ function App() {
   );
   const [copyStatus, setCopyStatus] = useState("");
   const [segmentsOpen, setSegmentsOpen] = useState(false);
+  const [confettiBurst, setConfettiBurst] = useState(0);
   const [readerSettings, updateReaderSettings] = useReaderSettings();
   const hydratingRef = useRef(false);
   const lastPersistRef = useRef(null);
@@ -225,6 +226,14 @@ function App() {
       return;
     }
 
+    // Celebrate only when this click marks the last unfinished segment done
+    const finishesTraining =
+      !completed[activeIndex] &&
+      training.segments.every((_, index) => index === activeIndex || completed[index]);
+    if (finishesTraining) {
+      setConfettiBurst((count) => count + 1);
+    }
+
     setTrainingState((previous) => {
       if (!previous.training) {
         return previous;
@@ -253,7 +262,7 @@ function App() {
         activeIndex: nextActiveIndex,
       };
     });
-  }, [training]);
+  }, [training, activeIndex, completed]);
 
   const handlePrevious = useCallback(() => {
     if (!training) {
@@ -686,25 +695,6 @@ function App() {
     }
   }, [shareLink]);
 
-  const handleShare = useCallback(async () => {
-    if (!shareLink) {
-      return;
-    }
-
-    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-      try {
-        await navigator.share({ title: training?.title || DEFAULT_TITLE, url: shareLink });
-        return;
-      } catch (shareError) {
-        if (shareError?.name === "AbortError") {
-          return;
-        }
-      }
-    }
-
-    handleCopyShareLink();
-  }, [shareLink, training, handleCopyShareLink]);
-
   const totalSegments = training?.segments.length ?? 0;
   const completedCount = completed.filter(Boolean).length;
   const allDone = totalSegments > 0 && completedCount === totalSegments;
@@ -903,6 +893,7 @@ function App() {
 
   return (
     <div className="app-shell is-learning">
+      {confettiBurst > 0 && <Confetti key={confettiBurst} />}
       <aside className="sidebar">
         <div className="sidebar-top">
           <button
@@ -1025,23 +1016,14 @@ function App() {
       <main className="content">
         {allDone && (
           <section className="completion-banner" role="status">
-            <div className="confetti" aria-hidden="true">
-              {Array.from({ length: 14 }, (_, index) => (
-                <span key={index} />
-              ))}
-            </div>
             <span className="completion-icon">
               <TrophyIcon />
             </span>
             <div className="completion-text">
               <strong>You finished every section!</strong>
-              <p>Share your win or slice something new.</p>
+              <p>You are ready to slice something new.</p>
             </div>
             <div className="completion-actions">
-              <button type="button" className="ghost-button" onClick={handleShare}>
-                <ShareIcon />
-                Share
-              </button>
               <button type="button" className="primary-button" onClick={handleReset}>
                 <PlusIcon />
                 New training
