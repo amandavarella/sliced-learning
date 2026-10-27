@@ -15,6 +15,7 @@ export const sanitizeHtml = (unsafeHtml) => {
       "figcaption",
       "picture",
       "source",
+      "video",
       // Text content
       "p",
       "a",
@@ -88,6 +89,14 @@ export const sanitizeHtml = (unsafeHtml) => {
       // Media attributes
       "type",
       "media",
+      // Video attributes
+      "poster",
+      "controls",
+      "autoplay",
+      "muted",
+      "loop",
+      "playsinline",
+      "preload",
       // Semantic attributes
       "class",
       "id",
