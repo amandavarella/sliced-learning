@@ -181,3 +181,64 @@ test("processArticle keeps embedded videos inside figures", async (t) => {
     "video figure caption should be retained",
   );
 });
+
+test("processArticle keeps srcset URLs that contain commas", async (t) => {
+  const cdnUrl = (width) =>
+    `https://substackcdn.com/image/fetch/$s_!Ab12!,w_${width},c_limit,f_webp,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fdiagram.png`;
+
+  const originalGet = axios.get;
+  axios.get = async () => ({
+    data: `<!DOCTYPE html>
+<html lang="en">
+  <head><title>Substack Article</title></head>
+  <body>
+    <article>
+      <h1>Article With Substack Images</h1>
+      <p>
+        The opening paragraph gives the readability heuristic enough prose to
+        score this block as the main content of the page before the figure.
+      </p>
+      <figure>
+        <picture>
+          <source type="image/webp" srcset="${cdnUrl(424)} 424w, ${cdnUrl(848)} 848w" />
+          <img src="${cdnUrl(1456)}" srcset="${cdnUrl(424)} 424w,${cdnUrl(848)} 848w" alt="Diagram" />
+        </picture>
+      </figure>
+      <p>
+        A closing paragraph follows the figure so the image sits in the middle
+        of the article body, which mirrors how newsletter posts embed diagrams.
+      </p>
+    </article>
+  </body>
+</html>`,
+  });
+
+  t.after(() => {
+    axios.get = originalGet;
+  });
+
+  const result = await processArticle("https://newsletter.example.com/p/post");
+  const combinedHtml = result.segments
+    .map((segment) => segment.html || "")
+    .join("")
+    .replaceAll("&amp;", "&");
+
+  const expectedSrcset = `${cdnUrl(424)} 424w, ${cdnUrl(848)} 848w`;
+
+  assert.ok(
+    combinedHtml.includes(`<source type="image/webp" srcset="${expectedSrcset}"`),
+    "picture source srcset should keep each CDN URL whole",
+  );
+
+  assert.ok(
+    combinedHtml.includes(`srcset="${expectedSrcset}"`) &&
+      combinedHtml.includes(`src="${cdnUrl(1456)}"`),
+    "img src and srcset should keep each CDN URL whole",
+  );
+
+  assert.doesNotMatch(
+    combinedHtml,
+    /newsletter\.example\.com\/p\/w_/,
+    "srcset fragments should not be resolved against the article URL",
+  );
+});
