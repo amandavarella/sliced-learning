@@ -77,23 +77,37 @@ const resolveImageUrl = (value, baseUrl) => {
   }
 };
 
+// Parses srcset the way the HTML spec does: a URL runs up to whitespace, then
+// descriptors run up to the next comma. Splitting on every comma breaks URLs
+// that contain commas, such as Substack's CDN transform options.
+const parseSrcset = (value) => {
+  const candidates = [];
+  let remaining = value;
+
+  while ((remaining = remaining.replace(/^[\s,]+/, ""))) {
+    const [url] = remaining.match(/^\S+/);
+    remaining = remaining.slice(url.length);
+
+    if (url.endsWith(",")) {
+      candidates.push({ url: url.replace(/,+$/, "") });
+      continue;
+    }
+
+    const [descriptorText, descriptor] = remaining.match(/^([^,]*)/);
+    remaining = remaining.slice(descriptorText.length);
+    candidates.push({ url, descriptor: descriptor.trim() || undefined });
+  }
+
+  return candidates;
+};
+
 const extractFirstSrcFromSrcset = (value) => {
   if (!value) {
     return null;
   }
 
-  const firstCandidate = value
-    .split(",")
-    .map((candidate) => candidate.trim())
-    .filter(Boolean)
-    .shift();
-
-  if (!firstCandidate) {
-    return null;
-  }
-
-  const [urlPart] = firstCandidate.split(/\s+/);
-  return urlPart || null;
+  const [firstCandidate] = parseSrcset(value);
+  return firstCandidate?.url || null;
 };
 
 const normalizeSrcset = (value, baseUrl) => {
@@ -101,13 +115,9 @@ const normalizeSrcset = (value, baseUrl) => {
     return null;
   }
 
-  const normalizedCandidates = value
-    .split(",")
-    .map((candidate) => candidate.trim())
-    .filter(Boolean)
-    .map((candidate) => {
-      const [urlPart, descriptor] = candidate.split(/\s+/, 2);
-      const resolved = resolveImageUrl(urlPart, baseUrl);
+  const normalizedCandidates = parseSrcset(value)
+    .map(({ url, descriptor }) => {
+      const resolved = resolveImageUrl(url, baseUrl);
       if (!resolved) {
         return null;
       }
