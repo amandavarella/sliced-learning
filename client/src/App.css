@@ -1236,13 +1236,6 @@ svg {
   font-size: 1em;
 }
 
-.drive-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
 .drive-audio-card {
   display: flex;
   flex-direction: column;
