@@ -1,5 +1,3 @@
-import { JSDOM } from "jsdom";
-
 const WORD_PATTERN = /\s+/g;
 const FORBIDDEN_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT"]);
 const NODE_TYPE = {
@@ -95,20 +93,27 @@ const unwrapContainer = (node) => {
   return current;
 };
 
-export const chunkHtmlContent = (html, maxWordsPerSegment) => {
+// Splits sanitised HTML into segments of at most maxWordsPerSegment words,
+// keeping whole block elements together where they fit. `parseHtml` turns an
+// HTML string into a Document (see dom/node.js and dom/browser.js), which keeps
+// this module free of any DOM library.
+export const chunkHtmlContent = (html, maxWordsPerSegment, { parseHtml } = {}) => {
   if (!html || !html.trim()) {
     return [];
   }
 
-  const dom = new JSDOM(`<body>${html}</body>`);
-  const { document } = dom.window;
+  if (typeof parseHtml !== "function") {
+    throw new TypeError("chunkHtmlContent needs a parseHtml function");
+  }
+
+  const document = parseHtml(html);
   const root = unwrapContainer(document.body);
 
   const segments = [];
   let currentHtmlParts = [];
   let currentTextParts = [];
   let currentWordCount = 0;
-  
+
   const pushSegment = () => {
     if (!currentHtmlParts.length) {
       return;

@@ -1,10 +1,7 @@
 import axios from "axios";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import { sanitizeHtml } from "../../utils/sanitize.js";
-
-const WORDS_PER_MINUTE = 200;
-const SEGMENT_MINUTES = 2;
+import { sanitizeHtml, SEGMENT_MINUTES, WORDS_PER_MINUTE } from "../../utils/slicing.js";
 
 /**
  * Extract folder ID from Google Drive URL

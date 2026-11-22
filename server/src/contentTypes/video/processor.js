@@ -1,5 +1,5 @@
 import axios from "axios";
-import { buildTimingSegments } from "../../utils/segmentation.js";
+import { buildTimingSegments } from "../../utils/slicing.js";
 
 const SEGMENT_MINUTES = 10;
 const SEGMENT_SECONDS = SEGMENT_MINUTES * 60;

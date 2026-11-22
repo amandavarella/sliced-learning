@@ -1,12 +1,7 @@
 import axios from "axios";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import { chunkByWordGoal, chunkHtmlContent } from "../../utils/segmentation.js";
-import { sanitizeHtml } from "../../utils/sanitize.js";
-
-const WORDS_PER_MINUTE = 200;
-const SEGMENT_MINUTES = 2;
-const MAX_WORDS_PER_SEGMENT = WORDS_PER_MINUTE * SEGMENT_MINUTES;
+import { sliceHtml } from "../../utils/slicing.js";
 
 const fetchHtml = async (url) => {
   const { data } = await axios.get(url, {
@@ -20,15 +15,6 @@ const fetchHtml = async (url) => {
   });
 
   return data;
-};
-
-const normalizeText = (htmlContent) => {
-  const dom = new JSDOM(`<body>${htmlContent}</body>`);
-  const document = dom.window.document;
-  return Array.from(document.querySelectorAll("p"))
-    .map((node) => node.textContent.trim())
-    .filter(Boolean)
-    .join("\n\n");
 };
 
 // Common lazy-loading attributes we should promote into actual src values.
@@ -424,39 +410,10 @@ export const processArticle = async (url) => {
     }
   }
 
-  const normalizedHtmlContent = normalizeArticleContent(rawHtmlContent, url);
-  const sanitizedHtmlContent = sanitizeHtml(normalizedHtmlContent);
-  const fallbackText = parsed.textContent || normalizeText(sanitizedHtmlContent);
-  const htmlSegments = chunkHtmlContent(sanitizedHtmlContent, MAX_WORDS_PER_SEGMENT);
-
-  const baseSegments = htmlSegments.length
-    ? htmlSegments
-    : chunkByWordGoal(fallbackText, MAX_WORDS_PER_SEGMENT).map((segment) => ({
-        html: null,
-        text: segment.text,
-        wordCount: segment.wordCount,
-      }));
-
-  const totalWords = baseSegments.reduce(
-    (total, segment) => total + segment.wordCount,
-    0,
-  );
-
-  return {
-    type: "article",
-    title: parsed.title || dom.window.document.title || "Article",
+  return sliceHtml({
+    html: normalizeArticleContent(rawHtmlContent, url),
+    title: parsed.title || dom.window.document.title,
     sourceUrl: url,
-    segmentMinutes: SEGMENT_MINUTES,
-    totalSegments: baseSegments.length,
-    totalWords,
-    segments: baseSegments.map((segment, index) => ({
-      id: `segment-${index + 1}`,
-      label: `Section ${index + 1}`,
-      wordCount: segment.wordCount,
-      estimatedMinutes: Math.max(1, Math.round(segment.wordCount / WORDS_PER_MINUTE)),
-      text: segment.text,
-      html: segment.html,
-    })),
-  };
+    fallbackText: parsed.textContent,
+  });
 };
-
