@@ -10,8 +10,8 @@
 //
 // Playwright cannot click the toolbar button, and a click driven from the
 // service worker does not grant activeTab. So the test loads a copy of dist/
-// whose manifest also has host access to github.com. The real build keeps
-// activeTab only.
+// whose manifest also has host access to github.com. The real build reaches
+// github.com through activeTab only.
 //
 // Environment:
 //   PLAYWRIGHT_MODULE  path to playwright's index.js when it is not resolvable
@@ -56,7 +56,7 @@ const profileDir = join(workDir, "profile");
 cpSync(dist, extensionDir, { recursive: true });
 const manifestPath = join(extensionDir, "manifest.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-manifest.host_permissions = ["https://github.com/*"];
+manifest.host_permissions = [...(manifest.host_permissions || []), "https://github.com/*"];
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
 const chromium = await loadPlaywright();

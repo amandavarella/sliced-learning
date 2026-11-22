@@ -50,6 +50,11 @@ export const SANITIZE_CONFIG = {
     "blockquote",
     "pre",
     "code",
+    "kbd",
+    // Collapsible sections (GitHub Markdown). Inert: no scripting, and
+    // DOMPurify still strips event handler attributes from them
+    "details",
+    "summary",
     // Structure
     "div",
     "span",

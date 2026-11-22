@@ -1,11 +1,14 @@
 // chrome.storage.local layout:
 //
-//   capture:<key>   { title, html, sourceUrl, capturedAt }
+//   capture:<key>   { title, html, sourceUrl, capturedAt, kind, stats }
 //                   Written by the service worker on a toolbar click, read
 //                   and deleted by the reader once it has sliced it.
-//   training:<key>  { payload, progress, capturedAt }
+//   training:<key>  { payload, progress, capturedAt, stats }
 //                   The sliced training (the same shape the server returns
 //                   from POST /api/process) plus the learner's progress.
+//                   payload.sourceKind is the extractor's page kind
+//                   (blob, wiki, issue...); stats are the image inlining
+//                   counts from the capture.
 //
 // <key> is the normalised page URL from urlKey.js.
 export const captureKey = (key) => `capture:${key}`;

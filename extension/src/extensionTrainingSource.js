@@ -36,7 +36,7 @@ const sliceCapture = (capture) => {
     dom: createBrowserDom(DOMParser),
     sanitize: createSanitizer(DOMPurify),
   });
-  return { ...payload, type: "article" };
+  return { ...payload, type: "article", sourceKind: capture.kind || "generic" };
 };
 
 const loadTraining = async ({ key, reslice }) => {
@@ -58,6 +58,7 @@ const loadTraining = async ({ key, reslice }) => {
     payload,
     progress: emptyProgress(payload),
     capturedAt: capture.capturedAt,
+    stats: capture.stats || null,
   };
   await writeTraining(key, stored);
   await deleteCapture(key);

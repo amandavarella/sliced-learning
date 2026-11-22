@@ -5,6 +5,7 @@
 import { isSupportedUrl } from "./sites.js";
 import { normaliseUrl } from "./urlKey.js";
 import { writeCapture } from "./storage.js";
+import { FETCH_IMAGE_MESSAGE, fetchImageInWorker } from "./imageFetch.js";
 
 const READER_PATH = "reader.html";
 
@@ -33,7 +34,9 @@ const capture = async (tabId) => {
   await chrome.scripting.executeScript({ target, files: ["capture.js"] });
   const [injection] = await chrome.scripting.executeScript({
     target,
-    func: () => globalThis.__slicedLearningCapture(),
+    // The capture is async (image inlining); executeScript waits for the
+    // promise a func returns and hands back its resolved value
+    func: async () => globalThis.__slicedLearningCapture(),
   });
   if (!injection?.result?.html) {
     throw new Error("The page returned no content to capture.");
@@ -58,6 +61,16 @@ chrome.action.onClicked.addListener((tab) => {
   handleActionClick(tab).catch((error) => {
     console.error("Sliced Learning could not capture this page", error);
   });
+});
+
+// Image fetches the capture script could not make from the page (see
+// imageFetch.js). Only messages from this extension's own scripts arrive here.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== FETCH_IMAGE_MESSAGE || sender.id !== chrome.runtime.id) {
+    return false;
+  }
+  fetchImageInWorker(message).then(sendResponse);
+  return true;
 });
 
 // Exposed so the smoke test can drive a click from the service worker

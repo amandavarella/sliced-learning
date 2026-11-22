@@ -179,3 +179,59 @@ Deviations from the plan above, made while building the scaffold:
 - **One React.** `vite.reader.config.js` aliases `react` and `react-dom` to `extension/node_modules`, so the client code bundled from `client/src` does not pull in `client/node_modules/react`.
 - **Smoke test uses a patched manifest copy.** A click driven from the service worker does not grant `activeTab`, so `scripts/e2e-smoke.mjs` loads a temporary copy of `dist/` with `host_permissions: ["https://github.com/*"]`. The real manifest has no host permissions.
 - **Known gap for phase 7.** "New" and "Start over" are hidden in extension mode, but the brand button in the sidebar still returns to the landing page. That page has no URL form in the extension and its copy still says "Paste a link". The extension landing needs its own copy (or the library list).
+
+## Phase 5 notes
+
+GitHub extraction for the four page kinds, cleaning, and image inlining. Code in `extension/src/extractors/`, tests next to it (`npm test` in `extension/`), browser check in `extension/scripts/e2e-github.mjs`.
+
+### Selectors as implemented
+
+| Kind | URL path | Body selectors, in order | Title, in order |
+|---|---|---|---|
+| `blob` | `/<o>/<r>/blob/...` | `article.markdown-body` | first `h1` in the body, `#file-name-id-wide` |
+| `repo-readme` | `/<o>/<r>` | `#readme article.markdown-body`, `article.markdown-body` | first `h1` in the body, `<o>/<r>` |
+| `folder-readme` | `/<o>/<r>/tree/...` | `#readme article.markdown-body`, `article.markdown-body` | first `h1` in the body, `#file-name-id-wide`, last path segment |
+| `wiki` | `/<o>/<r>/wiki[/...]` | `#wiki-body .markdown-body`, `#wiki-body`, skipping anything inside `.wiki-custom-sidebar` | `h1.gh-header-title`, first `h1` in the body |
+| `issue` | `/<o>/<r>/issues/<n>` | `[data-testid="issue-body"] [data-testid="markdown-body"]`, `#issue-body-viewer .markdown-body` | `[data-testid="issue-title"]` |
+| `pr` | `/<o>/<r>/pull/<n>` | `[id^="pullrequest-"] .js-comment-body`, `.js-discussion .js-comment-body`, then the two issue selectors | `[data-testid="issue-title"]`, then the header `h1`: `.js-issue-title` or its first `span`, else its text minus `.sr-only` and a trailing `#N` |
+
+Every kind falls back to `og:title`, then `document.title` minus ` · GitHub`. A match with no text and no image is skipped. When no selector matches, `extractPage` uses the generic capture (kind `generic`).
+
+### Deviations
+
+- **Host permission for GitHub image hosts.** The plan wanted no host permissions. Fetching from the page context does not work for two GitHub image hosts: `private-user-images.githubusercontent.com` (uploaded screenshots in issues, PRs and READMEs) and `camo.githubusercontent.com` (the proxy for external images) send no `Access-Control-Allow-Origin` header, and content script requests follow the page's CORS rules. Checked on the live issue page: both fail with `Failed to fetch` from the isolated world, while `img.shields.io` and same-origin `github.com` succeed. The manifest now asks for `https://*.githubusercontent.com/*`, and when a page fetch throws, the capture asks the service worker to fetch the image (`src/imageFetch.js`). Chrome shows this as an install warning for githubusercontent.com. It grants nothing on github.com or Confluence. **Needs Amanda's OK**; without it, uploaded images and camo-only images keep their URLs, and the uploaded ones break after five minutes.
+- **Segment count on short pages.** A segment is 400 words. The Vite README is about 150 words, so it slices into one segment; the e2e expects at least one for that page. The phase 1 issue (`vitejs/vite#21954`) and PR (`#22981`) are also under 400 words, so the e2e uses `vitejs/vite#11804` (issue with an uploaded screenshot) and `vitejs/vite#10671` (PR with an image) instead.
+- **PR header.** Signed out, the PR timeline is still classic, but the header `h1` is already the React component (`h1[data-component="Heading"]` with the title in the first `span` and ` - #N` in `.sr-only`). The title strategy handles both headers.
+- **Task lists.** The sanitiser keeps dropping `input`; it cannot constrain `type` and `disabled` without a DOMPurify hook, which would apply to the server's shared instance too. `cleanBody` replaces each checkbox with `☑ ` or `☐ ` text instead.
+- **`details`.** GitHub UI toggles (`details.details-reset`, `details.details-overlay`, `details-dialog`) are removed. A `details` that wraps the whole body is opened up, with its summary kept as a paragraph. Other `details` in the content stay, collapsed, because the sanitiser does not allow the `open` attribute.
+- **Diagrams.** Every `section.js-render-needs-enrichment`, `.render-container` or `iframe.render-viewer` becomes `<pre><code class="language-<type>">` (type from `data-type`, usually `mermaid`) plus a "Diagram rendered on GitHub" link. The source comes from `pre[lang]`, then `data-json`, the iframe's `data-content`, then `data-plain`. The same code covers GeoJSON, TopoJSON and STL blocks, which use the same viewscreen markup [Inference: not seen in a fixture].
+- **Stats.** `stats` also has `reasons`, counting skips by `fetch-failed`, `not-image`, `too-large` and `total-cap`. The reader writes `stats` into `training:<key>` next to `payload`, and `payload.sourceKind` holds the page kind.
+- **Fetch timeout.** Each image fetch is aborted after 15 seconds so one slow host cannot hang the capture.
+
+### Sanitiser
+
+`shared/sanitize.js` now allows `details`, `summary` and `kbd`. Checked before the change: all three were stripped to their text. `input` stays stripped (see task lists above). GitHub alert blocks (`div.markdown-alert`) already survive as classed `div`s; only their SVG icon is dropped, so the "Note" or "Warning" label text remains. The reader has no alert styles yet. The URI regexp is unchanged. Tests in `shared/sanitize.test.js`.
+
+### Results
+
+Unit tests: 43 in `extension/` (extractor, cleaning, inlining, service worker fallback), 16 in `shared/` (10 existing, 6 new for the sanitiser). Server tests still pass (3).
+
+`npm run e2e:github` on 2026-11-23, headless Chrome for Testing, signed out:
+
+| Kind | Page | Title | Segments | Images inlined |
+|---|---|---|---|---|
+| `blob` | `mozilla/readability/blob/main/README.md` | Readability.js | 3 | 0 of 0 |
+| `repo-readme` | `vitejs/vite` | Vite ⚡ | 1 | 9 of 9 (89 KB) |
+| `wiki` | `mrdoob/three.js/wiki/Migration-Guide` | Migration Guide | 30 | 0 of 0 |
+| `issue` | `vitejs/vite/issues/11804` | TypeError: Failed to fetch dynamically imported module | 2 | 1 of 1 (39 KB) |
+| `pr` | `vitejs/vite/pull/10671` | feat: experimental server persistent caching | 2 | 1 of 1 (10 KB) |
+
+The phase 4 smoke test still passes. `dist/capture.js` is a single IIFE with no `import`, about 17 KB unminified.
+
+### Unverified
+
+- **Signed-in PR view.** The React PR view fallback (issue selectors on a `/pull/` URL) is only tested against the issue fixture. Open question 3 above still stands.
+- **Private repo `/raw/` images.** The page fetch to `github.com/<o>/<r>/raw/...` sends the session, and the redirect goes to `raw.githubusercontent.com` with a `?token=`. Whether that redirect target answers a cross-origin fetch from the page is not checked. If it does not, the service worker fallback fetches it without cookies, which works only if the token in the redirect URL is enough. Open question 4 above still stands.
+- **Uploaded images on private repos.** Assumed to behave like public ones (signed `private-user-images` URL, no cookies needed), so the service worker fallback should work. Not checked.
+- **`picture` sources.** Inlining replaces the `img`; a `<source srcset>` beside it (the Vite logo's dark variant) keeps its camo URL, which the reader may load instead in dark mode. Camo is public, so it still loads.
+- **GitHub error pages.** One headless probe of the PR page got GitHub's "Unicorn!" error page; a retry worked. `e2e-github.mjs` retries a page up to three times.

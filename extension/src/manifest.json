@@ -5,6 +5,7 @@
   "description": "Slice GitHub and Confluence pages into short training segments, kept in this browser.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "storage", "unlimitedStorage"],
+  "host_permissions": ["https://*.githubusercontent.com/*"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
