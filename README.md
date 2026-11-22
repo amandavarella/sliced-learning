@@ -28,7 +28,7 @@ The client dev server proxies `/api` calls to `http://localhost:4000`, so start 
 
 ## Chrome extension
 
-Pages behind GitHub SSO or an Atlassian login cannot be fetched by the server. The Chrome extension in `extension/` reads those pages from your logged-in tab, slices them locally and keeps the training and progress in your browser. See [extension/README.md](extension/README.md) for building it, loading it unpacked and running its smoke test.
+Pages behind GitHub SSO or an Atlassian login cannot be fetched by the server. The Chrome extension in `extension/` reads those pages from your logged-in tab, slices them locally and keeps the training and progress in your browser. Its Library page lists the stored trainings with their progress and lets you delete them, and opening a page again offers to continue the saved training or re-slice it from the fresh capture. See [extension/README.md](extension/README.md) for building it, loading it unpacked, the Library and storage, and running its smoke test.
 
 ## Features
 

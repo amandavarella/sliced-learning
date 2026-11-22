@@ -1,5 +1,15 @@
 # Chrome extension: slice GitHub and Confluence pages in the browser
 
+## Status
+
+All seven phases are implemented on the `chrome-extension` branch, one or two commits each. Unit tests, the smoke test, the GitHub e2e against public pages and the Confluence e2e against a local mock pass. Nothing has run against envato.atlassian.net, a private GitHub repo or a signed-in GitHub session. Amanda still needs to check these by hand:
+
+- **Confluence on envato.atlassian.net:** the "First manual test on envato.atlassian.net" checklist in the phase 6 notes, which covers open questions 1 and 2 (cookie auth from page scripts, DOM selectors), whether `body.export_view` comes back from v2, whether attachment downloads redirect to another host, the title suffix, and the macro markup.
+- **GitHub signed in:** open question 3 (the React PR view), open question 4 (private repo `/raw/` images), uploaded images on private repos, and the `picture` dark-mode sources (phase 5 "Unverified").
+- **The `*.githubusercontent.com` host permission** from phase 5 needs her OK, since Chrome shows it as an install warning.
+- **Mermaid:** phase 5 shows diagram source as a code block plus a link (open question 5). Confirm that is the choice she wants.
+- **A real toolbar click** (phase 7): every browser test drives the click from the service worker with an extra host permission, so the `activeTab` path, the reader tab reload on a second click, and the toolbar icon at 16 px on light and dark toolbars are unchecked.
+
 ## Why
 
 The server fetches URLs with axios and no cookies, so pages behind GitHub SSO or Atlassian login return a sign-in page. A Chrome extension runs inside the logged-in tab, reads the rendered page, slices it locally and keeps the text in the browser. Company content never reaches the server.
@@ -112,7 +122,7 @@ Title fallback for every kind: `meta[property="og:title"]`, then `document.title
 - **Wiki pages are server-rendered.** The three.js wiki home is written in Textile (`#wiki-body.gollum-textile-content`) but still contains a `.markdown-body` child, so the same selector works.
 - **No `<template>` hiding content.** The only `template` elements on these pages are GitHub UI templates (flash messages, clipboard buttons).
 - **GitHub UI inside the body:** every heading is wrapped in `div.markdown-heading` with an `a.anchor` holding an `svg.octicon-link` (137 of them on the wiki page). Code blocks sit in `div.highlight` with `pl-*` classed spans and a `clipboard-copy` button in a `.zeroclipboard-container`. Issue task lists carry `task-list-item` classes. The phase 5 extractor should drop `a.anchor`, `clipboard-copy` and `.zeroclipboard-container` before slicing. These SVG octicons are why the raw SVG count is high; none of them are content.
-- **Mermaid is not inline SVG.** The risk line above assumed it was. GitHub renders each diagram in a cross-origin `iframe.render-viewer` from `viewscreen.githubusercontent.com`, inside `section.js-render-needs-enrichment[data-type="mermaid"]`. The capture script cannot read inside that iframe. The source survives in the same section as `pre[lang="mermaid"]` and in a `data-json` attribute on the render container. Phase 5 options: show the Mermaid source as a code block, or a placeholder with a link to the original. See `fixtures/github/blob-mermaid.html` (10 diagrams).
+- **Mermaid is not inline SVG,** as the risk line above assumed. GitHub renders each diagram in a cross-origin `iframe.render-viewer` from `viewscreen.githubusercontent.com`, inside `section.js-render-needs-enrichment[data-type="mermaid"]`. The capture script cannot read inside that iframe. The source survives in the same section as `pre[lang="mermaid"]` and in a `data-json` attribute on the render container. Phase 5 options: show the Mermaid source as a code block, or a placeholder with a link to the original. See `fixtures/github/blob-mermaid.html` (10 diagrams).
 
 ### Image URLs in rendered Markdown
 
@@ -171,14 +181,14 @@ Checked against the published specs `https://dac-static.atlassian.com/cloud/conf
 
 Deviations from the plan above, made while building the scaffold:
 
-- **Slicing runs in the reader page, not the service worker.** An MV3 service worker has no `DOMParser` (found in phase 2). The service worker stores the raw capture as `capture:<key>`; the reader slices it on open, writes `training:<key>` and deletes the capture. When a training already exists the reader opens it and ignores the new capture unless the URL has `reslice=1`.
+- **Slicing runs in the reader page, not the service worker.** An MV3 service worker has no `DOMParser` (found in phase 2). The service worker stores the raw capture as `capture:<key>`; the reader slices it on open, writes `training:<key>` and deletes the capture. When a training already exists the reader opens it and ignores the new capture unless the URL has `reslice=1`. Phase 7 replaces this with a continue or re-slice banner.
 - **Phase 4 goes past "an empty reader".** The generic capture (`article.markdown-body`, then `main`, then `body`, minus `a.anchor`, `clipboard-copy` and `.zeroclipboard-container`) is enough to slice a public GitHub README end to end. It also resolves `href` and `src` to absolute URLs, since the reader renders from `chrome-extension://`.
 - **Capture runs in two `executeScript` calls.** The first injects `capture.js`, which only defines `globalThis.__slicedLearningCapture` in the extension's isolated world. The second calls it with `func` and gets the result. This avoids depending on the completion value of the IIFE bundle and leaves room for an async capture (image inlining) and options in later phases.
 - **The reader tab is reused.** The service worker looks for an open reader tab with the same URL through `chrome.runtime.getContexts` and focuses it, otherwise opens a new one. That API needs Chrome 116, set as `minimum_chrome_version`.
 - **No inline script in `reader.html`.** The web app applies saved display settings with an inline script; extension pages forbid that, so `reader.jsx` does it before mounting.
 - **One React.** `vite.reader.config.js` aliases `react` and `react-dom` to `extension/node_modules`, so the client code bundled from `client/src` does not pull in `client/node_modules/react`.
 - **Smoke test uses a patched manifest copy.** A click driven from the service worker does not grant `activeTab`, so `scripts/e2e-smoke.mjs` loads a temporary copy of `dist/` with `host_permissions: ["https://github.com/*"]`. The real manifest has no host permissions.
-- **Known gap for phase 7.** "New" and "Start over" are hidden in extension mode, but the brand button in the sidebar still returns to the landing page. That page has no URL form in the extension and its copy still says "Paste a link". The extension landing needs its own copy (or the library list).
+- **Known gap for phase 7.** "New" and "Start over" are hidden in extension mode, but the brand button in the sidebar still returns to the landing page. That page has no URL form in the extension and its copy still says "Paste a link". The extension landing needs its own copy (or the library list). Fixed in phase 7: the brand button opens the Library.
 
 ## Phase 5 notes
 
@@ -253,7 +263,7 @@ A route fails on a non-2xx answer, a thrown fetch, a 20 second timeout, or HTML 
 
 ### Deviations
 
-- **`sites.js` now accepts any `*.atlassian.net` site** (one label before `atlassian.net`), not only `envato.atlassian.net`, so the mock e2e can use `mock.atlassian.net`. The page is still read only on a click, and the manifest has no Atlassian host permission. Jira pages on the same host count as supported and get the generic capture.
+- **`sites.js` now accepts any `*.atlassian.net` site** (one label before `atlassian.net`), where phase 5 allowed `envato.atlassian.net` alone, so the mock e2e can use `mock.atlassian.net`. The page is still read only on a click, and the manifest has no Atlassian host permission. Jira pages on the same host count as supported and get the generic capture.
 - **`extractPage` is async** for every host because the Confluence extractor awaits the API. The three GitHub tests that call it now `await` it; nothing else in them changed.
 - **API HTML stays in an inert document.** `parseBody` parses the HTML with the page's `DOMParser` and keeps the wrapper in that parsed document, rather than importing it into the page, so attachment images do not start loading and scripts never run in the page.
 - **Image credentials.** Page-context image fetches now pass `credentials: "include"` for same-origin URLs and keep `"same-origin"` (the fetch default) for cross-origin ones (`withPageCredentials` in `imageFetch.js`). Same-origin requests already sent cookies under the default, so behaviour on GitHub is unchanged; `include` for cross-origin would break hosts answering `Access-Control-Allow-Origin: *`.
@@ -365,3 +375,71 @@ If something is off, run these in DevTools on the Confluence page tab (not the r
   ```
 
 - **Capture errors.** In `chrome://extensions`, click **service worker** on the Sliced Learning card and look for "Sliced Learning could not capture this page".
+
+## Phase 7 notes
+
+Polish: a Library of stored trainings with delete, the continue or re-slice choice, reader details, icons from the app logo, and a font fix. Built and tested on 2026-11-23.
+
+### What changed
+
+| Area | Behaviour | Code |
+|---|---|---|
+| Library | With no training open, the extension reader lists every `training:<key>`: title (opens `reader.html?key=<key>`), site badge, page kind, capture date, "n of m done" and a progress bar, newest progress first. Above the list: the number of trainings (finished and in progress) and storage used from `getBytesInUse`, each with a helper line. An empty library explains which pages are supported. | `client/src/components/Library.jsx`, `listTrainings` and `getStorageUsage` in `extensionTrainingSource.js` |
+| Delete | **Delete** turns into "Delete this training and its progress?" with Delete and Cancel. Confirming removes `training:<key>` and `capture:<key>` in one `chrome.storage.local.remove` call, then reloads the list. | `deleteTraining`, `deleteTrainingAndCapture` in `storage.js` |
+| Continue or re-slice | When a training and a newer capture both exist, the reader opens the training with a banner: "Saved training from <date>. Continue, or Re-slice from the page you just captured." Continue deletes the capture. Re-slice slices it, replaces the training and resets progress. `?reslice=1` re-slices without asking. A capture older than the training is deleted on open. | `loadTraining`, `keepSavedTraining`, `resliceTraining`; the banner in `App.jsx` |
+| Unsupported page | The message names the supported sites and page kinds, with a "Back to your library" link. A missing capture shows the same layout. | `UNSUPPORTED_MESSAGE`, `Library.jsx` |
+| Reader details | Description line from the source: "GitHub issue · 2 sections · ~2 min each". "Images skipped: n" under it when `stats.skipped` is above zero, with the reasons as a tooltip. `document.title` was already the training title; the smoke test now checks it. "Open original" was already present. | `describeTraining`, `getTrainingNotes`, `src/sourceKinds.js` |
+| Icons | The `LogoMark` gradient square with three bars, rasterised at 16, 32, 48 and 128 px. | `scripts/make-icons.mjs` |
+| Fonts | Inter at a 16px base on the reader page (see below). | `src/reader.css` |
+
+### Training source interface additions
+
+Documented in `client/src/trainingSource/index.js`. The web source sets `library: false` and implements none of the methods, so its landing page, description line and behaviour are unchanged.
+
+| Member | Purpose |
+|---|---|
+| `capabilities.library` | Render `<Library>` instead of the landing page when no training is loaded |
+| `listTrainings()` | `TrainingSummary[]`: `key`, `title`, `href`, `sourceUrl`, `site`, `kindLabel`, `capturedAt`, `updatedAt`, `completedCount`, `totalSegments` |
+| `deleteTraining(key)` | Remove a training and anything kept for it |
+| `getStorageUsage()` | `{ bytes, label }`, optional |
+| `describeTraining(training)` | Description line, optional; defaults to the content type's |
+| `getTrainingNotes(training)` | `{ id, text, detail }[]` shown under the description, optional |
+| `keepSavedTraining(training)`, `resliceTraining(training)` | The two banner actions, used when `load` returns `pendingCapture` |
+
+### Deviations
+
+- **The reused reader tab is reloaded.** The service worker already focused an open reader tab for the same key. It now also reloads it, so the reader reads the fresh capture and shows the banner. Progress is saved on every move, so the reload loses nothing. The alternative, a `chrome.storage.onChanged` listener in the reader, would need another interface hook for no visible gain.
+- **The extension source now has `syncLocation`.** Once a training shows, it rewrites the address to `?key=<key>`, which drops `reslice=1` so a reload does not re-slice again and keeps the URL the service worker looks for when reusing tabs. When the learner goes back to the Library it clears the query. It only clears a key it wrote itself, so the first render (no training yet) cannot wipe the key being loaded.
+- **`progressUpdatedAt`.** `training:<key>` gains this field, set on every progress save and to the capture time on slicing. The Library sorts by it and falls back to `capturedAt` for trainings saved before phase 7.
+- **Badges.** Sites come from the page kind first, then the host: GitHub, Confluence, Atlassian (a generic capture on `atlassian.net`, such as a Jira page) or Web page.
+- **No charts on the Library figures.** The "Numbers in the UI" rule asks for clickable figures with a small chart of real history. Storage and training counts are read live and no history is stored, so there is nothing true to chart and the figures are plain.
+- **New CSS** is one scoped block in `client/src/App.css` (`.library-*`, `.capture-banner`, `.segment-note`, `.type-pill.is-github` and `.is-confluence`). It reuses `feature-card`, `type-pill`, `progress-bar`, `progress-stats`, `completion-banner`, `primary-button`, `ghost-button` and `error-message`. No existing rule changed.
+
+### Fonts under the extension CSP
+
+Phase 4 left this unverified. The smoke test now waits for `document.fonts.ready` and checks the loaded faces and the body's computed style. The Google Fonts stylesheet does load under the default extension page CSP: `Inter` and `Literata` both report `loaded`. The check found a different problem. Chrome gives extension pages a default stylesheet with `body { font-family: system-ui, sans-serif; font-size: 75% }`, which overrides the `:root` font, so the reader UI was in system-ui at 12px since phase 4. Only elements with their own `font-family` (segment text, some headings) used Inter. `src/reader.css`, imported only by the extension entry, sets `body { font-family: inherit; font-size: inherit }`. Body is now `Inter, system-ui, ...` at 16px. Fonts are still fetched from Google, so with no network the reader falls back to system fonts. Bundling the font files was not needed.
+
+### Icons
+
+`make-icons.mjs` stays plain Node. It describes `LogoMark` as data (the 32 x 32 rounded square with radius 9, the `#7c5cff` to `#ff6b9d` diagonal gradient, and the three white bars at opacity 1, 0.85 and 0.7), samples each pixel 64 times, and writes RGBA PNGs with `zlib`. No new dependency. The shapes are copied by hand, so a change to `LogoMark` needs the same change in the script.
+
+### Results
+
+| Check | Result |
+|---|---|
+| `client`: `npm run lint`, `npm run build` | clean |
+| `extension`: `npm test` | 71 pass (66 before, 5 new in `sourceKinds.test.js`) |
+| `extension`: `npm run build` | clean |
+| `shared`: `npm test` | 16 pass, unchanged |
+| `npm run smoke` | pass: Library, delete with cancel, banner, Continue, Re-slice, `?reslice=1`, unsupported link, fonts, no console errors |
+| `E2E_ONLY=blob,issue npm run e2e:github` | pass: blob 3 segments, issue 2 segments with 1 of 1 image inlined |
+| `npm run e2e:confluence` | pass: `api-v2`, `api-v1` and `dom` routes |
+
+All runs were headless Chrome for Testing (Playwright's `chromium-1243`), with `PLAYWRIGHT_MODULE` pointing at the main checkout's Playwright.
+
+### Unverified
+
+- **A real toolbar click.** See the Status list at the top.
+- **The banner date** uses the browser's locale and time zone (`toLocaleDateString`), checked only in an English locale.
+- **Storage used** counts every key the extension stores, including captures waiting for a choice, so it can be larger than the sum of the listed trainings.
+- **Large libraries.** `listTrainings` reads the whole storage area, data URLs included, on every open. Fine for tens of trainings; with hundreds of image-heavy ones it may be slow. Not measured.

@@ -1,16 +1,31 @@
-// Writes placeholder toolbar icons (a purple rounded square with a white "S")
-// to src/icons. Plain Node, no image libraries: pixels are drawn by hand and
-// encoded as PNG with zlib. Run with `npm run icons`; the output is committed.
+// Writes the toolbar icons to src/icons from the app's LogoMark
+// (client/src/components/Icons.jsx): a rounded square with a diagonal
+// purple-to-pink gradient and three white bars. Plain Node, no image
+// libraries: the shapes are rasterised here with 8 x 8 supersampling for
+// smooth edges and encoded as PNG with zlib. Run with `npm run icons`; the
+// output is committed. If LogoMark changes, update LOGO below to match.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const SIZES = [16, 32, 48, 128];
-const BACKGROUND = [109, 74, 255];
-const FOREGROUND = [255, 255, 255];
+const SAMPLES = 8;
 
-// 5 x 7 bitmap of the letter S
-const GLYPH = ["01111", "10000", "10000", "01110", "00001", "00001", "11110"];
+// LogoMark in its own 32 x 32 viewBox
+const VIEWBOX = 32;
+const LOGO = {
+  background: { x: 0, y: 0, width: 32, height: 32, radius: 9 },
+  // linearGradient x1=0 y1=0 x2=1 y2=1: colour runs along x + y
+  gradient: [
+    [124, 92, 255],
+    [255, 107, 157],
+  ],
+  bars: [
+    { x: 7, y: 8, width: 18, height: 4, radius: 2, opacity: 1 },
+    { x: 7, y: 14, width: 13, height: 4, radius: 2, opacity: 0.85 },
+    { x: 7, y: 20, width: 8, height: 4, radius: 2, opacity: 0.7 },
+  ],
+};
 
 const crcTable = Array.from({ length: 256 }, (_, n) => {
   let c = n;
@@ -37,37 +52,65 @@ const chunk = (type, data) => {
   return Buffer.concat([length, body, crc]);
 };
 
-const insideRoundedSquare = (x, y, size) => {
-  const radius = size * 0.22;
-  const cx = Math.min(Math.max(x, radius), size - radius);
-  const cy = Math.min(Math.max(y, radius), size - radius);
-  return (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2;
+const insideRoundedRect = (x, y, rect) => {
+  const halfWidth = rect.width / 2;
+  const halfHeight = rect.height / 2;
+  const dx = Math.max(Math.abs(x - (rect.x + halfWidth)) - (halfWidth - rect.radius), 0);
+  const dy = Math.max(Math.abs(y - (rect.y + halfHeight)) - (halfHeight - rect.radius), 0);
+  return dx * dx + dy * dy <= rect.radius * rect.radius;
 };
 
-const insideGlyph = (x, y, size) => {
-  const cell = Math.max(1, Math.floor((size * 0.62) / GLYPH.length));
-  const width = cell * GLYPH[0].length;
-  const height = cell * GLYPH.length;
-  const left = Math.floor((size - width) / 2);
-  const top = Math.floor((size - height) / 2);
-  const col = Math.floor((x - left) / cell);
-  const row = Math.floor((y - top) / cell);
-  return GLYPH[row]?.[col] === "1" && x >= left && y >= top;
+const mix = (from, to, t) => from.map((value, index) => value + (to[index] - value) * t);
+
+// Colour and alpha of the logo at a point in viewBox units
+const sample = (x, y) => {
+  if (!insideRoundedRect(x, y, LOGO.background)) {
+    return [0, 0, 0, 0];
+  }
+  const t = Math.min(Math.max((x + y) / (2 * VIEWBOX), 0), 1);
+  let colour = mix(LOGO.gradient[0], LOGO.gradient[1], t);
+  for (const bar of LOGO.bars) {
+    if (insideRoundedRect(x, y, bar)) {
+      colour = mix(colour, [255, 255, 255], bar.opacity);
+    }
+  }
+  return [...colour, 1];
 };
 
 const drawIcon = (size) => {
+  const scale = VIEWBOX / size;
   const rows = [];
   for (let y = 0; y < size; y += 1) {
     const row = Buffer.alloc(1 + size * 4);
     for (let x = 0; x < size; x += 1) {
-      const px = x + 0.5;
-      const py = y + 0.5;
-      const offset = 1 + x * 4;
-      if (!insideRoundedSquare(px, py, size)) {
-        continue;
+      // Average premultiplied samples, then divide the alpha back out
+      let red = 0;
+      let green = 0;
+      let blue = 0;
+      let alpha = 0;
+      for (let sy = 0; sy < SAMPLES; sy += 1) {
+        for (let sx = 0; sx < SAMPLES; sx += 1) {
+          const [r, g, b, a] = sample(
+            (x + (sx + 0.5) / SAMPLES) * scale,
+            (y + (sy + 0.5) / SAMPLES) * scale,
+          );
+          red += r * a;
+          green += g * a;
+          blue += b * a;
+          alpha += a;
+        }
       }
-      const colour = insideGlyph(x, y, size) ? FOREGROUND : BACKGROUND;
-      row.set([...colour, 255], offset);
+      if (alpha > 0) {
+        row.set(
+          [
+            Math.round(red / alpha),
+            Math.round(green / alpha),
+            Math.round(blue / alpha),
+            Math.round((alpha / (SAMPLES * SAMPLES)) * 255),
+          ],
+          1 + x * 4,
+        );
+      }
     }
     rows.push(row);
   }

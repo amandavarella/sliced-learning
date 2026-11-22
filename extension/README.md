@@ -2,9 +2,9 @@
 
 Slices GitHub and Confluence Cloud pages into training segments inside your browser. Click the toolbar button on a supported page: the extension reads the rendered page from the logged-in tab, opens the Sliced Learning reader in a new tab, and slices the page there. The text and your progress stay in this Chrome profile (`chrome.storage.local`). Nothing is sent to the Sliced Learning server.
 
-Supported hosts: `github.com` and any Confluence Cloud site on `*.atlassian.net` (built for `envato.atlassian.net`). On any other page the button opens the reader with a short "unsupported page" message.
+Supported hosts: `github.com` and any Confluence Cloud site on `*.atlassian.net` (built for `envato.atlassian.net`). On any other page the button opens the reader with a message naming the supported sites and a link to the Library.
 
-Status: phase 6 of [the plan](../docs/chrome-extension-plan.md). GitHub and Confluence Cloud pages have their own extractors. A supported host with a page the extractors do not recognise (a Confluence space overview, a Jira page on `atlassian.net`) uses the generic capture (the first of `article.markdown-body`, `main`, `body`).
+Status: all seven phases of [the plan](../docs/chrome-extension-plan.md) are built. GitHub and Confluence Cloud pages have their own extractors. A supported host with a page the extractors do not recognise (a Confluence space overview, a Jira page on `atlassian.net`) uses the generic capture (the first of `article.markdown-body`, `main`, `body`).
 
 ## Supported GitHub pages
 
@@ -59,6 +59,34 @@ Only the expand and info macro class names are confirmed in Atlassian documentat
 
 **What to check on first real use.** Whether `via` is `api-v2` (stored in `training:<key>.extraction`), whether macros come through as the table above says, and whether attachment images were inlined (`stats.inlined`). The checklist with DevTools snippets is in the plan under "First manual test on envato.atlassian.net".
 
+## Library
+
+Open `reader.html` with no query (the brand button in the reader, the "Back to your library" link, or `chrome-extension://<id>/reader.html`) to see every training stored in this profile, most recently studied first (by the last progress save, else the capture date). Each row shows:
+
+- the title, which opens the training (`reader.html?key=<key>`)
+- a site badge (GitHub, Confluence, Atlassian for other `atlassian.net` pages, or Web page) and the page kind ("GitHub issue", "Confluence page")
+- the capture date and "n of m done" with a progress bar
+- **Delete**, which asks "Delete this training and its progress?" first. Confirming removes `training:<key>` and any `capture:<key>` still waiting for it. It cannot be undone; capture the page again to get it back, with progress reset.
+
+Two figures sit above the list: the number of trainings (finished and in progress) and **Storage used**, from `chrome.storage.local.getBytesInUse`, which counts everything the extension stores. Images are inlined into each training, so image-heavy pages take the most space; deleting finished trainings frees it. The `unlimitedStorage` permission means Chrome does not cap it.
+
+The list is read when the Library opens and again when its tab comes back into view.
+
+## Opening a page again: continue or re-slice
+
+Clicking the toolbar button on a page that already has a training stores a fresh capture and opens (or focuses and reloads) its reader tab. Because both exist, the reader shows a banner: "Saved training from <date>. Continue, or Re-slice from the page you just captured."
+
+- **Continue** keeps the saved training and its progress, and deletes the new capture.
+- **Re-slice** slices the new capture, replaces the training and resets progress to the first segment.
+
+Until you choose, the capture stays in storage and the banner comes back on reload. `reader.html?key=<key>&reslice=1` re-slices the waiting capture without asking; the reader then drops `reslice=1` from the address so a reload does not re-slice again.
+
+## Reader details
+
+The tab title is the training title. "Open original" in the progress panel opens the captured page in a new tab. The line under the title names the page kind, for example "GitHub issue · 2 sections · ~2 min each". When the capture left images as links, a second line says "Images skipped: n" and its tooltip gives the reasons from `stats.reasons` (could not be fetched, not an image, over the 2 MB per-image limit, after the 20 MB training limit).
+
+Chrome gives extension pages a default stylesheet that sets `body` to `system-ui` at 75%. `src/reader.css` hands the font and size back to the root, so the reader uses Inter at the same 16px base as the web app. The Google Fonts stylesheet loads under the default extension page CSP (checked by the smoke test).
+
 ## Images
 
 Images are inlined into the training as `data:` URLs during the capture, because uploaded GitHub images use signed URLs that expire after five minutes and private repo images need your session. `src/extractors/inlineImages.js` fetches up to four images at a time:
@@ -86,7 +114,7 @@ The build writes `extension/dist/`:
 - `capture.js`: the script injected into the page on a click. It is a classic script with no imports (Vite bundles the extractor modules into one IIFE).
 - `manifest.json` and `icons/`, copied from `src/`.
 
-`npm run icons` regenerates the placeholder icons in `src/icons/`.
+`npm run icons` regenerates the toolbar icons in `src/icons/` (16, 32, 48 and 128 px) from the app's `LogoMark` (`client/src/components/Icons.jsx`). `scripts/make-icons.mjs` holds the logo's shapes and colours, rasterises them with 8 x 8 supersampling and writes PNGs with Node's zlib, so it needs no image library. If `LogoMark` changes, update the `LOGO` constant in the script and run it again.
 
 ## Load unpacked
 
@@ -107,7 +135,15 @@ Runs the extractor, cleaning and image inlining tests (`src/**/*.test.js`) with 
 
 ## Smoke test
 
-`scripts/e2e-smoke.mjs` runs the whole flow in Chromium with Playwright: it opens the Readability README on GitHub, triggers the toolbar handler from the service worker, checks the reader shows segments, clicks Next, reloads and checks progress survived, clicks again and checks the reader tab is reused, opens an unsupported page, and fails on any console error in the reader. It needs network access to github.com. It is not run in CI.
+`scripts/e2e-smoke.mjs` runs the whole flow in Chromium with Playwright: it opens the Readability README on GitHub, triggers the toolbar handler from the service worker, and checks that:
+
+- the reader shows segments, the tab title is the training title, the description names the kind, and Inter from Google Fonts loaded on a 16px body
+- progress survives a reload
+- a second click reuses the tab and shows the banner; Continue keeps progress and removes the capture
+- a third click and Re-slice reset progress; `?reslice=1` re-slices without asking and leaves the address
+- the Library lists the training with "1 of 3 done" above an older Confluence training written into storage by the test, a row opens its training, and Delete (after Cancel once) removes the training and its waiting capture
+- an unsupported page names the supported sites and links back to the Library
+- the reader logs no console errors It needs network access to github.com. It is not run in CI.
 
 ```bash
 npm run build
@@ -134,12 +170,12 @@ All data lives in `chrome.storage.local`. `<key>` is the page URL normalised by 
 
 | Key | Value | Written by | Removed |
 |---|---|---|---|
-| `capture:<key>` | `{ title, html, sourceUrl, capturedAt, kind, stats, extraction }` | service worker, on each click | by the reader once it slices the capture |
-| `training:<key>` | `{ payload, progress, capturedAt, stats, extraction }` | reader, after slicing; progress on every move | not yet (phase 7 adds a library with delete) |
+| `capture:<key>` | `{ title, html, sourceUrl, capturedAt, kind, stats, extraction }` | service worker, on each click | by the reader once it slices the capture, on Continue, or with the training on Delete |
+| `training:<key>` | `{ payload, progress, capturedAt, progressUpdatedAt, stats, extraction }` | reader, after slicing; progress on every move | Delete in the Library |
 
-`payload` has the shape the server returns from `POST /api/process` (`type`, `title`, `sourceUrl`, `segmentMinutes`, `totalSegments`, `totalWords`, `segments[]`), plus `sourceKind`, the extractor's page kind (`confluence` for Confluence pages). `extraction` is `{ via, format, apiErrors }` for Confluence (`format` is `export_view` or `view`, `apiErrors` lists why the API routes failed on a `dom` capture) and `null` elsewhere. `type` is always `"article"`. `progress` is `{ completed: boolean[], activeIndex }`.
+`payload` has the shape the server returns from `POST /api/process` (`type`, `title`, `sourceUrl`, `segmentMinutes`, `totalSegments`, `totalWords`, `segments[]`), plus `sourceKind`, the extractor's page kind (`confluence` for Confluence pages). `extraction` is `{ via, format, apiErrors }` for Confluence (`format` is `export_view` or `view`, `apiErrors` lists why the API routes failed on a `dom` capture) and `null` elsewhere. `type` is always `"article"`. `progress` is `{ completed: boolean[], activeIndex }`. `progressUpdatedAt` is the ISO time of the last progress save (the capture time until then) and orders the Library.
 
-When `training:<key>` already exists, the reader opens it with its progress and leaves the fresh capture alone. `reader.html?key=<key>&reslice=1` slices the latest capture again; phase 7 adds a button for it.
+When `training:<key>` and a newer `capture:<key>` both exist, the reader asks whether to continue or re-slice (see above).
 
 ## Source layout
 
@@ -157,8 +193,11 @@ When `training:<key>` already exists, the reader opens it with its progress and 
 | `src/extractors/inlineImages.js` | Inlines images as data URLs within the caps |
 | `src/imageFetch.js` | Page fetch with the service worker fallback |
 | `src/reader.html`, `src/reader.jsx` | Reader page entry, mounts `createReaderApp` from `client/src/ReaderRoot.jsx` |
-| `src/extensionTrainingSource.js` | Training source backed by `chrome.storage.local`; slices with `shared/slice.js` |
+| `src/reader.css` | Undoes Chrome's default extension page font |
+| `src/extensionTrainingSource.js` | Training source backed by `chrome.storage.local`; slices with `shared/slice.js`, lists and deletes trainings, continue or re-slice |
+| `src/sourceKinds.js` | Labels for page kinds and sites, the skipped images note, byte formatting |
 | `src/storage.js` | Storage keys and helpers |
+| `../client/src/components/Library.jsx` | The Library, shown when a training source has `capabilities.library` |
 | `src/urlKey.js` | URL normalisation into storage keys |
 | `src/sites.js` | Supported-host check (`github.com`, `*.atlassian.net`) |
 | `vite.reader.config.js` | App build for the reader |
