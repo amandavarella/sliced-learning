@@ -50,6 +50,21 @@ export const fetchImageInWorker = async ({ url, maxBytes }) => {
   }
 };
 
+// Credentials for a page-context image fetch. Same-origin images (Confluence
+// attachments under /wiki/download/, github.com /raw/ paths) send the session
+// cookie. Cross-origin images keep the fetch default ("same-origin", so no
+// cookies): with "include" a host answering `Access-Control-Allow-Origin: *`,
+// such as img.shields.io, would fail the CORS check.
+export const withPageCredentials = (url, init = {}, pageOrigin) => {
+  let sameOrigin = false;
+  try {
+    sameOrigin = new URL(url, pageOrigin).origin === pageOrigin;
+  } catch {
+    sameOrigin = false;
+  }
+  return { ...init, credentials: sameOrigin ? "include" : "same-origin" };
+};
+
 // Capture side: a fetchImpl for inlineImages that tries the page context, then
 // the service worker when the page fetch throws (CORS or network)
 export const createCaptureFetch = ({ pageFetch, sendMessage, maxBytes }) => async (url, init) => {

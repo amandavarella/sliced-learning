@@ -12,6 +12,7 @@
     "icons": "node scripts/make-icons.mjs",
     "smoke": "node scripts/e2e-smoke.mjs",
     "e2e:github": "node scripts/e2e-github.mjs",
+    "e2e:confluence": "node scripts/e2e-confluence-mock.mjs",
     "test": "node --test src/"
   },
   "dependencies": {

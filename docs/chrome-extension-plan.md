@@ -235,3 +235,133 @@ The phase 4 smoke test still passes. `dist/capture.js` is a single IIFE with no 
 - **Uploaded images on private repos.** Assumed to behave like public ones (signed `private-user-images` URL, no cookies needed), so the service worker fallback should work. Not checked.
 - **`picture` sources.** Inlining replaces the `img`; a `<source srcset>` beside it (the Vite logo's dark variant) keeps its camo URL, which the reader may load instead in dark mode. Camo is public, so it still loads.
 - **GitHub error pages.** One headless probe of the PR page got GitHub's "Unicorn!" error page; a retry worked. `e2e-github.mjs` retries a page up to three times.
+
+## Phase 6 notes
+
+Confluence Cloud capture: REST API first, DOM fallback, macro cleaning, attachment inlining. Code in `extension/src/extractors/confluence.js` and `cleanConfluence.js`, tests in `confluence.test.js`, browser check against a local mock in `extension/scripts/e2e-confluence-mock.mjs`. Nothing was run against a real Confluence site.
+
+### Routes as implemented
+
+| `via` | Request (from the page, `credentials: "include"`) | HTML | Title |
+|---|---|---|---|
+| `api-v2` | `GET /wiki/api/v2/pages/<id>?body-format=export_view` | `body.export_view.value` | `title` |
+| `api-v2` (retry) | same with `body-format=view`, when the first answer has no `body.export_view` | `body.view.value` | `title` |
+| `api-v1` | `GET /wiki/rest/api/content/search?cql=id=<id>&expand=body.export_view` | `results[0].body.export_view.value` | `results[0].title` |
+| `dom` | none | first non-empty of `[data-testid="page-content-only"]`, `#content-body`, `.ak-renderer-document`, `#main-content`, `#content` | `[data-testid="title-text"]`, `h1#title-text`, `og:title`, `document.title` minus ` - <Space> - Confluence` |
+
+A route fails on a non-2xx answer, a thrown fetch, a 20 second timeout, or HTML with no text and no image. An API answer without a title takes the DOM title. The page id comes from `/wiki/spaces/<space>/pages/<id>[/<slug>]` or `/wiki/pages/viewpage.action?pageId=<id>`; any other `atlassian.net` URL uses the generic capture. The route taken is stored as `extraction: { via, format, apiErrors }` in `capture:<key>` and `training:<key>`.
+
+### Deviations
+
+- **`sites.js` now accepts any `*.atlassian.net` site** (one label before `atlassian.net`), not only `envato.atlassian.net`, so the mock e2e can use `mock.atlassian.net`. The page is still read only on a click, and the manifest has no Atlassian host permission. Jira pages on the same host count as supported and get the generic capture.
+- **`extractPage` is async** for every host because the Confluence extractor awaits the API. The three GitHub tests that call it now `await` it; nothing else in them changed.
+- **API HTML stays in an inert document.** `parseBody` parses the HTML with the page's `DOMParser` and keeps the wrapper in that parsed document, rather than importing it into the page, so attachment images do not start loading and scripts never run in the page.
+- **Image credentials.** Page-context image fetches now pass `credentials: "include"` for same-origin URLs and keep `"same-origin"` (the fetch default) for cross-origin ones (`withPageCredentials` in `imageFetch.js`). Same-origin requests already sent cookies under the default, so behaviour on GitHub is unchanged; `include` for cross-origin would break hosts answering `Access-Control-Allow-Origin: *`.
+- **Info macros become blockquotes** (`blockquote.confluence-panel confluence-panel-<type>`) led by a bold title, since the reader already styles blockquotes and has no panel styles. The panel macro (`div.panel` with `.panelHeader`) gets the same treatment.
+- **Jira macros keep the summary** as text after the key link; the Jira status lozenge and issue type icon are dropped.
+- **No `content/{id}` v1 attempt.** Phase 1 suggested `GET /wiki/rest/api/content/<id>?expand=body.export_view` as a third API attempt. It is not in the current v1 spec, so it is not called.
+- **No sanitiser change.** `details`, `summary`, `blockquote`, `table`, `span` with `class` were already allowed. `shared/` is untouched.
+
+### Cleaning rules and how sure they are
+
+| Rule | Markup matched | Status |
+|---|---|---|
+| Expand macro to `details`/`summary` | `.expand-container`, `.expand-control`, `.expand-control-text`, `.expand-content` | `expand-container` and `expand-control` confirmed in Atlassian's KB "Expand Macro collapses immediately upon expanding it". `expand-control-text` and `expand-content` unverified. |
+| Info, note, tip, warning to blockquote | `.confluence-information-macro[-<type>]`, `p.title`, `.confluence-information-macro-body` | `confluence-information-macro`, `-body`, `-information` named in an Atlassian community answer on styling the info macro in HTML export. `p.title` and the other type suffixes unverified. |
+| Code macro to `pre > code` | `div.code.panel`, `[data-macro-name="code"]`, `.code-block`, `pre.syntaxhighlighter-pre` with `data-syntaxhighlighter-params="brush: <lang>"`, `.codeHeader` | Unverified |
+| Status lozenge to `span` | `.status-macro`, `[data-macro-name="status"]` | Unverified |
+| TOC macro removed | `.toc-macro`, `.client-side-toc-macro`, `[data-macro-name="toc"]` | Unverified |
+| Jira macro to link | `.jira-issue` with `data-jira-key`, `a.jira-issue-key`, `.summary`; else a link to `<origin>/browse/<key>` | Unverified |
+| Emoticons to text | `img.emoticon`, `img[data-emoticon-name]`, `img[data-emoji-id]`; `data-emoji-fallback` (unless it is a `:shortname:`), then `alt` | Unverified |
+| Attachment images | `img[data-image-src]` resolved against the site (or `data-base-url` for a relative path); old `src` kept as `data-fallback-src` | Unverified |
+| Layout unwrapped | `.contentLayout2`, `.columnLayout`, `.cell`, `.innerCell`, `div.table-wrap`, `span.confluence-embedded-file-wrapper` | Unverified |
+| UI removed | `span.aui-icon`, macro icon spans, `span.confluence-anchor-link`, `button`, `script`, `style` | Unverified |
+| URLs absolute | every `href`, `src`, `srcset`, against the page URL (reuses `absolutise` from `clean.js`) | Tested |
+
+Searches for Atlassian documentation of `syntaxhighlighter-pre`, `status-macro` and the Jira macro markup found nothing usable. These rules follow the view HTML Confluence has rendered for years, and Cloud may render some macros differently (or as empty shells, see Risks). The fixtures are hand-written to the same assumptions, so the tests prove the rules work on that markup, not that the markup is right.
+
+### Results
+
+Unit tests: 66 in `extension/` (43 from phase 5, 22 Confluence tests in `confluence.test.js`, 1 for `withPageCredentials`), 16 in `shared/` (unchanged).
+
+`npm run e2e:confluence` on 2026-11-23, headless Chrome for Testing, local mock routed from `https://mock.atlassian.net`:
+
+| Page | Mock behaviour | `via` | Title | Segments | Images inlined |
+|---|---|---|---|---|---|
+| 123 | v2 answers with `export_view` | `api-v2` | Onboarding guide | 2 | 2 of 2 |
+| 124 | v2 answers 500, v1 search answers | `api-v1` | Onboarding guide (v1) | 2 | 2 of 2 |
+| 125 | both answer 500 | `dom` | Onboarding from the rendered page | 1 | 0 of 0 |
+
+The mock refuses every API and attachment request without its session cookie; all 9 such requests carried it. The storage key drops the slug (`training:https://mock.atlassian.net/wiki/spaces/TEST/pages/123`). The phase 4 smoke test and `E2E_ONLY=repo-readme,issue npm run e2e:github` still pass. `dist/capture.js` is about 32 KB unminified (17 KB after phase 5).
+
+### Unverified
+
+- **Cookie auth from page scripts.** Phase 1 open question 1 still stands: whether envato.atlassian.net answers `/wiki/api/v2/...` from a page `fetch` with only the session cookie, or wants an `X-Atlassian-Token` header. The mock cannot tell; GET requests normally need no XSRF token.
+- **`body.export_view` in v2.** The v2 response schema does not declare it. The code retries with `view`, which renders macros less fully.
+- **Attachment downloads.** `/wiki/download/attachments/...` is same-origin, but Confluence Cloud may redirect it to the Atlassian media service on another host. A cross-origin redirect needs CORS headers on that host; if they are missing, the page fetch fails, the service worker fallback has no host permission there, and the image keeps its URL, which will not load in the reader. Look at `stats.reasons["fetch-failed"]` after the first capture.
+- **DOM selectors.** Phase 1 open question 2 still stands.
+- **Title suffix.** `document.title` assumed to be `<Page> - <Space> - Confluence`.
+- **Macro markup.** See the table above.
+
+### First manual test on envato.atlassian.net
+
+1. **Build and load.** `cd extension && npm install && npm run build`. In `chrome://extensions`, turn on Developer mode, click **Load unpacked** and pick `extension/dist` (or press reload on the existing card).
+2. **Open the page.** Sign in to envato.atlassian.net in the same Chrome profile and open the example page, `https://envato.atlassian.net/wiki/spaces/<SPACE>/pages/<pageId>/<slug>`. Pick one with a table, an image, a code block and an info or expand macro if you can.
+3. **Click the toolbar button.** The reader should open in a new tab with the page title and one or more sections.
+4. **Check the reader.** Title matches the page; headings, tables and code blocks look right; info macros show as quotes with a bold title; expand macros show as collapsed toggles; status lozenges are plain words; Jira macros are links with the key; no table of contents at the top; images show (they should be `data:` URLs, so they still load with the network off).
+5. **Check the route.** In the reader tab, open DevTools and run:
+
+   ```js
+   chrome.storage.local.get(null).then((all) => {
+     const [key, t] = Object.entries(all).find(([k]) => k.startsWith("training:") && k.includes("atlassian"));
+     console.log(key, t.payload.sourceKind, t.extraction, t.stats);
+   });
+   ```
+
+   Expect `confluence`, `extraction.via` = `"api-v2"`, `extraction.format` = `"export_view"`, and `stats.inlined` equal to the number of images. Paste the output back.
+
+If something is off, run these in DevTools on the Confluence page tab (not the reader) and paste the results:
+
+- **API answers from the page** (phase 1 question 1):
+
+  ```js
+  const id = location.pathname.match(/pages\/(\d+)/)?.[1] || new URLSearchParams(location.search).get("pageId");
+  fetch(`/wiki/api/v2/pages/${id}?body-format=export_view`, { credentials: "include" })
+    .then((r) => { console.log(r.status, r.headers.get("content-type")); return r.json(); })
+    .then((j) => console.log(Object.keys(j.body || {}), j.body?.export_view?.value?.length, j.title));
+  ```
+
+- **v1 fallback:**
+
+  ```js
+  fetch(`/wiki/rest/api/content/search?cql=id=${id}&expand=body.export_view`, { credentials: "include" })
+    .then((r) => r.json()).then((j) => console.log(j.results?.[0]?.body?.export_view?.value?.length));
+  ```
+
+- **Macro markup** (to correct the cleaning rules):
+
+  ```js
+  fetch(`/wiki/api/v2/pages/${id}?body-format=export_view`).then((r) => r.json()).then((j) => {
+    const d = new DOMParser().parseFromString(j.body.export_view.value, "text/html");
+    console.log([...new Set([...d.querySelectorAll("[data-macro-name]")].map((n) => `${n.dataset.macroName}: ${n.className}`))]);
+    console.log(d.querySelector("img")?.outerHTML);
+  });
+  ```
+
+- **Attachment fetch** (the redirect question above):
+
+  ```js
+  const img = document.querySelector('img[src*="/wiki/download/"], img[data-image-src]');
+  fetch(img.dataset.imageSrc || img.src, { credentials: "include" })
+    .then((r) => console.log(r.status, r.url, r.headers.get("content-type")))
+    .catch((e) => console.log("failed", e.message));
+  ```
+
+- **DOM fallback** (phase 1 question 2):
+
+  ```js
+  ['[data-testid="page-content-only"]', "#content-body", ".ak-renderer-document", "#main-content", "#content"]
+    .map((s) => [s, document.querySelector(s)?.innerText.length]);
+  ```
+
+- **Capture errors.** In `chrome://extensions`, click **service worker** on the Sliced Learning card and look for "Sliced Learning could not capture this page".

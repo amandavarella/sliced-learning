@@ -117,7 +117,7 @@ const replaceDiagrams = (root, pageUrl) => {
   return replaced;
 };
 
-const unwrap = (node) => {
+export const unwrap = (node) => {
   node.replaceWith(...Array.from(node.childNodes));
 };
 
@@ -149,7 +149,7 @@ const replaceCheckboxes = (root) => {
   }
 };
 
-const resolveUrl = (value, baseUrl) => {
+export const resolveUrl = (value, baseUrl) => {
   try {
     return new URL(value, baseUrl).href;
   } catch {
@@ -168,7 +168,7 @@ const resolveSrcset = (value, baseUrl) =>
     })
     .join(", ");
 
-const absolutise = (root, baseUrl) => {
+export const absolutise = (root, baseUrl) => {
   const all = [root, ...root.querySelectorAll("[href], [src], [srcset]")];
   for (const node of all) {
     for (const attribute of ["href", "src"]) {

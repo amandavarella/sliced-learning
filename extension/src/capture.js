@@ -6,21 +6,24 @@
 // worker calls it in a second executeScript call and awaits the promise it
 // returns, which keeps the result independent of how the bundle is wrapped.
 //
-// Pipeline: pick the extractor for the host, clean the body on a clone, then
+// Pipeline: pick the extractor for the host (the Confluence one calls the REST
+// API from the page, with the session cookie), clean the body on a clone, then
 // inline its images as data URLs. Images are fetched from the page context,
 // where cookies apply, with the service worker as a fallback for image hosts
 // that send no CORS headers (see imageFetch.js).
-import { cleanBody } from "./extractors/clean.js";
-import { extractPage } from "./extractors/index.js";
+import { cleanExtracted, extractPage } from "./extractors/index.js";
 import { DEFAULT_LIMITS, inlineImages } from "./extractors/inlineImages.js";
-import { createCaptureFetch } from "./imageFetch.js";
+import { createCaptureFetch, withPageCredentials } from "./imageFetch.js";
 
 const capturePage = async () => {
   const sourceUrl = location.href;
-  const { kind, title, bodyElement } = extractPage(document, sourceUrl);
-  const body = cleanBody(bodyElement, sourceUrl);
+  const extracted = await extractPage(document, sourceUrl, {
+    fetchImpl: (url, init) => fetch(url, init),
+  });
+  const { kind, title, via } = extracted;
+  const body = cleanExtracted(extracted, sourceUrl);
   const fetchImpl = createCaptureFetch({
-    pageFetch: (url, init) => fetch(url, init),
+    pageFetch: (url, init) => fetch(url, withPageCredentials(url, init, location.origin)),
     sendMessage: (message) => chrome.runtime.sendMessage(message),
     maxBytes: DEFAULT_LIMITS.perImageBytes,
   });
@@ -33,6 +36,7 @@ const capturePage = async () => {
     capturedAt: new Date().toISOString(),
     kind,
     stats,
+    extraction: via ? { via, format: extracted.format || null, apiErrors: extracted.apiErrors || [] } : null,
   };
 };
 

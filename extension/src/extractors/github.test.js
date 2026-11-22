@@ -90,23 +90,23 @@ test("extractGitHub returns null when no body matches", () => {
   assert.equal(extractGitHub(makeDocument({ url, body: "<main><p>Sign in</p></main>" }), url), null);
 });
 
-test("extractPage uses the generic capture off GitHub and when GitHub finds nothing", () => {
+test("extractPage uses the generic capture off GitHub and when GitHub finds nothing", async () => {
   const offSite = makeDocument({
     url: "https://example.com/post",
     pageTitle: "A post",
     body: "<main><h1>Heading</h1><p>Text</p></main>",
   });
-  const generic = extractPage(offSite, "https://example.com/post");
+  const generic = await extractPage(offSite, "https://example.com/post");
   assert.equal(generic.kind, "generic");
   assert.equal(generic.title, "Heading");
   assert.equal(generic.bodyElement.tagName, "MAIN");
 
   const url = "https://github.com/a/b/issues/3";
   const empty = makeDocument({ url, pageTitle: "Issue · GitHub", body: "<main><p>Sign in</p></main>" });
-  const fallback = extractPage(empty, url);
+  const fallback = await extractPage(empty, url);
   assert.equal(fallback.kind, "generic");
   assert.equal(fallback.title, "Issue");
 
   const page = PAGES.find((candidate) => candidate.kind === "wiki");
-  assert.equal(extractPage(pageDocument(page), page.url).kind, "wiki");
+  assert.equal((await extractPage(pageDocument(page), page.url)).kind, "wiki");
 });

@@ -13,7 +13,7 @@ import {
 } from "./storage.js";
 
 const UNSUPPORTED_MESSAGE =
-  "Sliced Learning works on github.com and envato.atlassian.net pages. Open one and click the toolbar button again.";
+  "Sliced Learning works on github.com and Confluence Cloud (atlassian.net) pages. Open one and click the toolbar button again.";
 const MISSING_MESSAGE =
   "Nothing has been captured for this page yet. Open the page and click the Sliced Learning toolbar button.";
 
@@ -59,6 +59,8 @@ const loadTraining = async ({ key, reslice }) => {
     progress: emptyProgress(payload),
     capturedAt: capture.capturedAt,
     stats: capture.stats || null,
+    // Which route the extractor took (Confluence: api-v2, api-v1 or dom)
+    extraction: capture.extraction || null,
   };
   await writeTraining(key, stored);
   await deleteCapture(key);

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { inlineImages } from "./extractors/inlineImages.js";
 import { makeDocument } from "./extractors/testPages.js";
-import { createCaptureFetch, FETCH_IMAGE_MESSAGE, fetchImageInWorker } from "./imageFetch.js";
+import { createCaptureFetch, FETCH_IMAGE_MESSAGE, fetchImageInWorker, withPageCredentials } from "./imageFetch.js";
 
 const corsError = () => Promise.reject(new TypeError("Failed to fetch"));
 const oneImage = (src) =>
@@ -71,4 +71,17 @@ test("fetchImageInWorker returns base64 for images within the cap", async (t) =>
   });
   assert.equal((await fetchImageInWorker({ url: "https://x.test/big.png", maxBytes: 100 })).status, 413);
   assert.equal((await fetchImageInWorker({ url: "http://x.test/a.png", maxBytes: 100 })).error, "bad-url");
+});
+
+test("withPageCredentials sends cookies to same-origin images only", () => {
+  const origin = "https://mock.atlassian.net";
+  assert.equal(
+    withPageCredentials("https://mock.atlassian.net/wiki/download/attachments/1/a.png", { signal: null }, origin).credentials,
+    "include",
+  );
+  assert.equal(withPageCredentials("/wiki/download/attachments/1/a.png", {}, origin).credentials, "include");
+  // Cross-origin keeps the fetch default, so ACAO: * hosts still pass CORS
+  assert.equal(withPageCredentials("https://img.shields.io/badge/x.svg", {}, origin).credentials, "same-origin");
+  assert.equal(withPageCredentials("https://github.com/a/b/raw/main/x.png", {}, "https://github.com").credentials, "include");
+  assert.deepEqual(withPageCredentials("https://x.test/a.png", { signal: "s" }, origin), { signal: "s", credentials: "same-origin" });
 });
