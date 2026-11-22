@@ -16,8 +16,14 @@
 // the service worker for hosts without CORS headers) runs as it would after a
 // real click.
 //
+// On the blob page it also opens the segment with the first highlighted code
+// block and checks, in the light and dark colour schemes, that a GitHub
+// Prettylights keyword span (span.pl-k) gets a colour of its own and that the
+// block background follows the theme (src/githubSyntax.css).
+//
 // Environment: PLAYWRIGHT_MODULE, CHROMIUM_PATH and HEADED=1, as in
-// e2e-smoke.mjs. E2E_ONLY=issue,pr runs a subset by kind.
+// e2e-smoke.mjs. E2E_ONLY=issue,pr runs a subset by kind. SCREENSHOT_DIR=<dir>
+// saves code-light.png and code-dark.png of that code block.
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +34,7 @@ const PAGES = [
     kind: "blob",
     url: "https://github.com/mozilla/readability/blob/main/README.md",
     ready: "article.markdown-body",
+    expectSyntaxColours: true,
   },
   {
     kind: "repo-readme",
@@ -125,6 +132,50 @@ const openSource = async (page, { url, ready }) => {
   return tab;
 };
 
+// Opens the first segment with a highlighted block and compares computed
+// colours in each scheme. Returns problems, and the colours for the log.
+const checkSyntaxColours = async (reader, segments) => {
+  const index = segments.findIndex((segment) => /class="pl-k"/.test(segment.html || ""));
+  if (index < 0) {
+    return { problems: ["no span.pl-k in any segment"] };
+  }
+  await reader.locator(".segment-item .segment-trigger").nth(index).click();
+  const block = reader.locator(".article-segment-content div.highlight").filter({ has: reader.locator("span.pl-k") }).first();
+  await block.waitFor({ timeout: 10000 });
+
+  const problems = [];
+  const colours = {};
+  for (const colorScheme of ["light", "dark"]) {
+    await reader.emulateMedia({ colorScheme });
+    const sample = await block.evaluate((node) => {
+      const pre = node.querySelector("pre");
+      const keyword = pre.querySelector("span.pl-k");
+      const preStyle = getComputedStyle(pre);
+      return {
+        text: preStyle.color,
+        background: preStyle.backgroundColor,
+        keyword: getComputedStyle(keyword).color,
+      };
+    });
+    colours[colorScheme] = sample;
+    if (sample.keyword === sample.text) {
+      problems.push(`${colorScheme}: span.pl-k has the code text colour ${sample.text}`);
+    }
+    if (process.env.SCREENSHOT_DIR) {
+      await block.scrollIntoViewIfNeeded();
+      await block.screenshot({ path: join(process.env.SCREENSHOT_DIR, `code-${colorScheme}.png`) });
+    }
+  }
+  if (colours.light.keyword === colours.dark.keyword) {
+    problems.push(`span.pl-k is ${colours.light.keyword} in both schemes`);
+  }
+  if (colours.light.background === colours.dark.background) {
+    problems.push(`code background is ${colours.light.background} in both schemes`);
+  }
+  await reader.emulateMedia({ colorScheme: null });
+  return { problems, colours };
+};
+
 const only = (process.env.E2E_ONLY || "").split(",").filter(Boolean);
 const pages = only.length ? PAGES.filter((page) => only.includes(page.kind)) : PAGES;
 
@@ -173,6 +224,11 @@ try {
       const minSegments = page.minSegments ?? MIN_SEGMENTS;
       if (payload.totalSegments < minSegments) problems.push(`${payload.totalSegments} segments, expected ${minSegments}+`);
       if (page.expectDataImage && result.dataImages < 1) problems.push("no data: image in the training");
+      if (page.expectSyntaxColours) {
+        const syntax = await checkSyntaxColours(reader, payload.segments);
+        result.syntaxColours = syntax.colours;
+        problems.push(...syntax.problems);
+      }
       result.ok = problems.length === 0;
       if (problems.length) {
         result.problems = problems;

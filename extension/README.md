@@ -89,6 +89,8 @@ Confluence trainings use a full-width layout: the content card fills the space b
 
 Chrome gives extension pages a default stylesheet that sets `body` to `system-ui` at 75%. `src/reader.css` hands the font and size back to the root, so the reader uses Inter at the same 16px base as the web app. The Google Fonts stylesheet loads under the default extension page CSP (checked by the smoke test).
 
+Code that GitHub highlighted keeps its Prettylights `pl-*` spans, and `src/githubSyntax.css` gives them GitHub's light and dark colours (Primer primitives, MIT) on a code block that follows the reader theme; `npm run e2e:github` checks a `span.pl-k` colour in both schemes.
+
 ## Images
 
 Images are inlined into the training as `data:` URLs during the capture, because uploaded GitHub images use signed URLs that expire after five minutes and private repo images need your session. `src/extractors/inlineImages.js` fetches up to four images at a time:

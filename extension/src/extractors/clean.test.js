@@ -2,7 +2,12 @@
 // page structure the extractor needs (the fixtures are body outerHTML only).
 import assert from "node:assert/strict";
 import test from "node:test";
+import createDOMPurify from "dompurify";
+import { JSDOM } from "jsdom";
 
+import { createBrowserDom } from "../../../shared/dom/browser.js";
+import { createSanitizer } from "../../../shared/sanitize.js";
+import { sliceHtml } from "../../../shared/slice.js";
 import { cleanBody, DIAGRAM_NOTE } from "./clean.js";
 import { extractGitHub } from "./github.js";
 import { makeDocument, PAGES, pageDocument } from "./testPages.js";
@@ -108,4 +113,26 @@ test("cleanBody opens a details element that wraps the whole body", () => {
   const body = cleanBody(document.querySelector("#b"), url);
   assert.equal(body.querySelectorAll("details, summary").length, 0);
   assert.equal(body.innerHTML, "<p>Click</p><p>Hidden text</p>");
+});
+
+test("GitHub syntax highlighting survives cleaning, sanitising and slicing", () => {
+  // The reader colours code with GitHub's Prettylights classes
+  // (extension/src/githubSyntax.css), so the pl-* spans must reach the segments
+  const page = byFixture("blob-readme.html");
+  const { body } = cleaned(page);
+  const window = new JSDOM("").window;
+  const payload = sliceHtml({
+    html: body.outerHTML,
+    title: "Readability",
+    sourceUrl: page.url,
+    dom: createBrowserDom(window.DOMParser),
+    sanitize: createSanitizer(createDOMPurify(window)),
+  });
+  const html = payload.segments.map((segment) => segment.html).join("");
+  const document = new JSDOM(html).window.document;
+
+  assert.ok(document.querySelector("div.highlight.highlight-source-js > pre"), "highlight wrapper lost");
+  for (const name of ["pl-k", "pl-s", "pl-c", "pl-c1", "pl-en", "pl-v", "pl-smi", "pl-s1", "pl-kos"]) {
+    assert.ok(document.querySelector(`.highlight pre span.${name}`), `span.${name} lost`);
+  }
 });

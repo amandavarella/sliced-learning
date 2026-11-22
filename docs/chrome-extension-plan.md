@@ -88,7 +88,7 @@ Each phase is one commit on the `chrome-extension` branch, done by one worker, r
 
 - **Selectors drift.** GitHub and Confluence redesign often. Keep a list of candidate selectors per page kind plus fixture tests that fail loudly.
 - **Mermaid and SVG.** GitHub renders Mermaid as inline SVG and the sanitiser strips `svg`. Decide in phase 5 whether to allow SVG or drop diagrams with a placeholder.
-- **Code highlighting.** GitHub and Confluence highlight with classed spans. The reader shows code monochrome unless highlight styles are added.
+- **Code highlighting.** Handled for GitHub in phase 7: the reader keeps GitHub's Prettylights spans and colours them in both themes (`extension/src/githubSyntax.css`). Confluence code macros still show monochrome.
 - **Confluence macros.** Jira macros, expand blocks and status lozenges may render as iframes or empty shells even in export view.
 - **Storage growth.** Data URLs make trainings large. The library list in phase 7 adds delete, and the caps above bound each training.
 
@@ -392,6 +392,7 @@ Polish: a Library of stored trainings with delete, the continue or re-slice choi
 | Icons | The `LogoMark` gradient square with three bars, rasterised at 16, 32, 48 and 128 px. | `scripts/make-icons.mjs` |
 | Fonts | Inter at a 16px base on the reader page (see below). | `src/reader.css` |
 | Wide Confluence layout | Confluence trainings get `is-wide` on `main.content`: the card and banners lose their max-width and the article body loses the reading measure, so wide tables can use the width beside the sidebar. The padding scale is unchanged, and other kinds and the web app keep the centred card. | `getLayout` in `extensionTrainingSource.js`, `.content.is-wide` in `client/src/App.css` |
+| GitHub syntax colours | Highlighted GitHub code keeps its Prettylights `pl-*` spans through cleaning, sanitising and slicing (tested on `blob-readme.html`). The reader colours them with GitHub's `--color-prettylights-syntax-*` values from Primer primitives 11.10.0, light for the light and sepia themes and dark for the dark theme or a dark OS with no theme set, mapped to classes as in github-markdown-css. Code blocks in extension trainings sit on the theme's `--surface-2` instead of the always-dark block. Extension only: the server's Readability pass drops classes, so web app articles never carry `pl-*` spans. `npm run e2e:github` checks the keyword colour and block background in both schemes. | `src/githubSyntax.css`, imported by `src/reader.jsx` |
 
 ### Training source interface additions
 
