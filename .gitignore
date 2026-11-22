@@ -11,3 +11,6 @@ node_modules/
 **/node_modules/
 
 AGENTS.local.md
+
+# Chrome extension build output
+extension/dist/

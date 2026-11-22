@@ -166,3 +166,16 @@ Checked against the published specs `https://dac-static.atlassian.com/cloud/conf
 3. **Signed-in GitHub PR view.** Signed out, PRs use the classic timeline. GitHub has been rolling out a React PR view for signed-in users. On one Envato PR, check whether `document.querySelector('[id^="pullrequest-"] .js-comment-body')` still finds the description; if not, paste the outer HTML of the description block.
 4. **Private repo images.** On a private Envato repo README with a relative image, confirm the `/raw/` URL fetches from the page context (`fetch(img.src).then(r => r.status)`), since the redirect target on private repos carries a token.
 5. **Mermaid.** Pick one: show diagram source as a code block, or a placeholder with a link to the original page.
+
+## Phase 4 notes
+
+Deviations from the plan above, made while building the scaffold:
+
+- **Slicing runs in the reader page, not the service worker.** An MV3 service worker has no `DOMParser` (found in phase 2). The service worker stores the raw capture as `capture:<key>`; the reader slices it on open, writes `training:<key>` and deletes the capture. When a training already exists the reader opens it and ignores the new capture unless the URL has `reslice=1`.
+- **Phase 4 goes past "an empty reader".** The generic capture (`article.markdown-body`, then `main`, then `body`, minus `a.anchor`, `clipboard-copy` and `.zeroclipboard-container`) is enough to slice a public GitHub README end to end. It also resolves `href` and `src` to absolute URLs, since the reader renders from `chrome-extension://`.
+- **Capture runs in two `executeScript` calls.** The first injects `capture.js`, which only defines `globalThis.__slicedLearningCapture` in the extension's isolated world. The second calls it with `func` and gets the result. This avoids depending on the completion value of the IIFE bundle and leaves room for an async capture (image inlining) and options in later phases.
+- **The reader tab is reused.** The service worker looks for an open reader tab with the same URL through `chrome.runtime.getContexts` and focuses it, otherwise opens a new one. That API needs Chrome 116, set as `minimum_chrome_version`.
+- **No inline script in `reader.html`.** The web app applies saved display settings with an inline script; extension pages forbid that, so `reader.jsx` does it before mounting.
+- **One React.** `vite.reader.config.js` aliases `react` and `react-dom` to `extension/node_modules`, so the client code bundled from `client/src` does not pull in `client/node_modules/react`.
+- **Smoke test uses a patched manifest copy.** A click driven from the service worker does not grant `activeTab`, so `scripts/e2e-smoke.mjs` loads a temporary copy of `dist/` with `host_permissions: ["https://github.com/*"]`. The real manifest has no host permissions.
+- **Known gap for phase 7.** "New" and "Start over" are hidden in extension mode, but the brand button in the sidebar still returns to the landing page. That page has no URL form in the extension and its copy still says "Paste a link". The extension landing needs its own copy (or the library list).

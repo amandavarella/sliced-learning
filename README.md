@@ -4,6 +4,7 @@ Transform long-form content (articles and YouTube videos) into digestible, track
 
 - **server/**: Express API that processes articles and YouTube videos into optimized learning segments
 - **client/**: React interface with embedded video players, rich article rendering, and shareable progress tracking
+- **extension/**: Chrome extension that slices GitHub and Confluence pages inside the browser
 
 ## Getting Started
 
@@ -24,6 +25,10 @@ npm run dev
 The client dev server proxies `/api` calls to `http://localhost:4000`, so start the backend first. Visit `http://localhost:5173` to load the UI.
 
 > **Note:** The server fetches external content. Provide valid URLs and ensure outbound network access is allowed in your environment.
+
+## Chrome extension
+
+Pages behind GitHub SSO or an Atlassian login cannot be fetched by the server. The Chrome extension in `extension/` reads those pages from your logged-in tab, slices them locally and keeps the training and progress in your browser. See [extension/README.md](extension/README.md) for building it, loading it unpacked and running its smoke test.
 
 ## Features
 
