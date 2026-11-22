@@ -832,6 +832,7 @@ function App() {
   const description =
     trainingSource.describeTraining?.(training) || getTrainingDescription(training);
   const trainingNotes = trainingSource.getTrainingNotes?.(training) ?? [];
+  const isWide = Boolean(trainingSource.getLayout?.(training)?.wide);
   const pendingCapture = training.pendingCapture;
   const savedAt = formatShortDateTime(training.capturedAt);
 
@@ -973,7 +974,7 @@ function App() {
         </div>
       </aside>
 
-      <main className="content">
+      <main className={isWide ? "content is-wide" : "content"}>
         {pendingCapture && (
           <section className="completion-banner capture-banner" role="status">
             <p className="capture-banner-text">

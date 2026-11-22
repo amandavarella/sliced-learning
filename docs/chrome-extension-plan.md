@@ -391,6 +391,7 @@ Polish: a Library of stored trainings with delete, the continue or re-slice choi
 | Reader details | Description line from the source: "GitHub issue · 2 sections · ~2 min each". "Images skipped: n" under it when `stats.skipped` is above zero, with the reasons as a tooltip. `document.title` was already the training title; the smoke test now checks it. "Open original" was already present. | `describeTraining`, `getTrainingNotes`, `src/sourceKinds.js` |
 | Icons | The `LogoMark` gradient square with three bars, rasterised at 16, 32, 48 and 128 px. | `scripts/make-icons.mjs` |
 | Fonts | Inter at a 16px base on the reader page (see below). | `src/reader.css` |
+| Wide Confluence layout | Confluence trainings get `is-wide` on `main.content`: the card and banners lose their max-width and the article body loses the reading measure, so wide tables can use the width beside the sidebar. The padding scale is unchanged, and other kinds and the web app keep the centred card. | `getLayout` in `extensionTrainingSource.js`, `.content.is-wide` in `client/src/App.css` |
 
 ### Training source interface additions
 
@@ -404,6 +405,7 @@ Documented in `client/src/trainingSource/index.js`. The web source sets `library
 | `getStorageUsage()` | `{ bytes, label }`, optional |
 | `describeTraining(training)` | Description line, optional; defaults to the content type's |
 | `getTrainingNotes(training)` | `{ id, text, detail }[]` shown under the description, optional |
+| `getLayout(training)` | `{ wide }`, optional; `wide: true` adds `is-wide` to the content container |
 | `keepSavedTraining(training)`, `resliceTraining(training)` | The two banner actions, used when `load` returns `pendingCapture` |
 
 ### Deviations

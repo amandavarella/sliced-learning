@@ -216,6 +216,12 @@ export const extensionTrainingSource = {
     return [skippedImagesNote(training.stats)].filter(Boolean);
   },
 
+  // Confluence pages are documentation with wide tables, so they get the
+  // full width beside the sidebar.
+  getLayout(training) {
+    return { wide: training.sourceKind === "confluence" };
+  },
+
   // The reader opens at ?key=<key>. Write it back once a training shows (this
   // drops reslice=1, so a reload does not re-slice), and clear it when the
   // learner goes back to the library.

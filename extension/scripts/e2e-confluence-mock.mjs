@@ -20,6 +20,10 @@
 // host access to https://mock.atlassian.net/*, because a click driven from the
 // service worker does not grant activeTab. The build in dist/ is not changed.
 //
+// Each reader is checked for the wide layout at 1600x900: the content
+// container has the is-wide class and the card is at least 90% of the width
+// beside the sidebar. Set SCREENSHOT_DIR to keep a screenshot of the first.
+//
 // Environment: PLAYWRIGHT_MODULE, CHROMIUM_PATH and HEADED=1, as in
 // e2e-smoke.mjs.
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -184,6 +188,28 @@ const waitForReader = async (open) => {
   throw new Error("The reader tab did not open");
 };
 
+// Confluence trainings use the wide layout: the content card fills the
+// width beside the sidebar. Measured at 1600x900; the first page also
+// leaves a screenshot when SCREENSHOT_DIR is set.
+const VIEWPORT = { width: 1600, height: 900 };
+const measureLayout = (reader) =>
+  reader.evaluate(() => {
+    const content = document.querySelector("main.content");
+    const card = document.querySelector(".segment-view");
+    const sidebar = document.querySelector(".sidebar");
+    const article = document.querySelector(".article-segment-content");
+    const tables = [...document.querySelectorAll(".article-segment-content table")];
+    return {
+      wideClass: content?.classList.contains("is-wide") ?? false,
+      viewport: window.innerWidth,
+      sidebar: sidebar?.getBoundingClientRect().width ?? 0,
+      card: card?.getBoundingClientRect().width ?? 0,
+      article: article?.getBoundingClientRect().width ?? 0,
+      tablesFit: tables.every((table) => table.getBoundingClientRect().width <= (article?.getBoundingClientRect().width ?? 0) + 1),
+      pageScrollsSideways: document.documentElement.scrollWidth > window.innerWidth,
+    };
+  });
+
 const results = [];
 let failed = false;
 try {
@@ -204,6 +230,13 @@ try {
         }, url),
       );
       await reader.waitForSelector(".segment-item", { timeout: 30000 });
+      await reader.setViewportSize(VIEWPORT);
+      const layout = await measureLayout(reader);
+      if (page.id === PAGES[0].id && process.env.SCREENSHOT_DIR) {
+        // Let the segment fade-in finish first
+        await reader.waitForTimeout(800);
+        await reader.screenshot({ path: join(process.env.SCREENSHOT_DIR, "confluence-reader-1600x900.png") });
+      }
 
       const stored = await worker.evaluate(() => chrome.storage.local.get(null));
       const entry = Object.entries(stored).find(
@@ -225,6 +258,7 @@ try {
         images: (html.match(/<img/g) || []).length,
         details: (html.match(/<details/g) || []).length,
         stats,
+        layout,
       });
 
       const problems = [];
@@ -235,6 +269,11 @@ try {
       if (result.dataImages < page.minDataImages) problems.push(`${result.dataImages} data: images, expected ${page.minDataImages}+`);
       if (key !== `training:${SITE}/wiki/spaces/TEST/pages/${page.id}`) problems.push(`key ${key} keeps the slug`);
       if (/emoticon|toc-macro|status-macro|jira-issue/.test(html)) problems.push("Confluence macro markup left in the training");
+      const available = layout.viewport - layout.sidebar;
+      if (!layout.wideClass) problems.push("content container lacks the is-wide class");
+      if (layout.card < available * 0.9) problems.push(`card ${layout.card}px wide, expected at least 90% of ${available}px`);
+      if (!layout.tablesFit) problems.push("a table is wider than the article body");
+      if (layout.pageScrollsSideways) problems.push("the reader scrolls sideways");
       result.ok = problems.length === 0;
       if (problems.length) {
         result.problems = problems;

@@ -131,6 +131,8 @@ try {
   assert(bodyChars > 200, `segment body has only ${bodyChars} characters`);
   assert((await reader.locator('a[aria-label="Open original"]').count()) === 1, "Open original link missing");
   assert((await reader.locator("#url-input").count()) === 0, "URL form should be hidden");
+  // Only Confluence trainings get the wide layout
+  assert((await reader.locator("main.content.is-wide").count()) === 0, "GitHub training should not use the wide layout");
   results.description = await reader.locator(".segment-meta").first().innerText();
   assert(results.description.startsWith("GitHub file · "), `description lacks the kind: ${results.description}`);
   assert(results.title === (await reader.locator(".segment-header h2").innerText()), "document.title is not the training title");

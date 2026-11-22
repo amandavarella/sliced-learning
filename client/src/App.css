@@ -953,6 +953,22 @@ svg {
   scroll-margin-top: 1rem;
 }
 
+/* Wide layout (a source's getLayout returns wide: true, used for Confluence
+   pages): the card and its banners fill the width beside the sidebar, and the
+   article body drops the reading measure so wide tables have room. The
+   padding scale stays the same. */
+.content.is-wide {
+  align-items: stretch;
+}
+
+.content.is-wide :is(.segment-view, .completion-banner) {
+  max-width: none;
+}
+
+.content.is-wide .article-segment-content {
+  max-width: none;
+}
+
 .segment-header {
   display: flex;
   align-items: flex-start;

@@ -85,6 +85,8 @@ Until you choose, the capture stays in storage and the banner comes back on relo
 
 The tab title is the training title. "Open original" in the progress panel opens the captured page in a new tab. The line under the title names the page kind, for example "GitHub issue · 2 sections · ~2 min each". When the capture left images as links, a second line says "Images skipped: n" and its tooltip gives the reasons from `stats.reasons` (could not be fetched, not an image, over the 2 MB per-image limit, after the 20 MB training limit).
 
+Confluence trainings use a full-width layout: the content card fills the space beside the sidebar and the article body drops the 36em reading measure, so wide tables have room. Other training kinds keep the centred 800 px card. The source asks for it through `getLayout(training)`, and `npm run e2e:confluence` checks the card is at least 90% of that space at 1600x900.
+
 Chrome gives extension pages a default stylesheet that sets `body` to `system-ui` at 75%. `src/reader.css` hands the font and size back to the root, so the reader uses Inter at the same 16px base as the web app. The Google Fonts stylesheet loads under the default extension page CSP (checked by the smoke test).
 
 ## Images

@@ -63,6 +63,10 @@ import { webTrainingSource } from "./webTrainingSource.js";
  *   The description line under the title. Defaults to the content type's description.
  * @property {(training: object) => TrainingNote[]} [getTrainingNotes]
  *   Notes about how the training was made, shown under the description. Optional.
+ * @property {(training: object) => { wide: boolean }} [getLayout]
+ *   How the reader lays the training out. `wide: true` lets the content card
+ *   fill the width beside the sidebar instead of the centred reading column.
+ *   Optional: without it every training uses the centred column.
  * @property {(training: object) => Promise<object>} [keepSavedTraining]
  * @property {(training: object) => Promise<object>} [resliceTraining]
  *   When `load` returns a training with `pendingCapture: { capturedAt }` (a
