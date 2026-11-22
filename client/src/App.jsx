@@ -21,9 +21,11 @@ import {
   VideoIcon,
 } from "./components/Icons.jsx";
 import Confetti from "./components/Confetti.jsx";
+import Library from "./components/Library.jsx";
 import ReaderSettings from "./components/ReaderSettings.jsx";
 import { useReaderSettings } from "./hooks/useReaderSettings.js";
 import { useTrainingSource } from "./trainingSource/index.js";
+import { formatShortDateTime } from "./utils/formatDate.js";
 import "./App.css";
 
 const DEFAULT_TITLE = "Sliced Learning";
@@ -127,6 +129,7 @@ function App() {
   const [copyStatus, setCopyStatus] = useState("");
   const [segmentsOpen, setSegmentsOpen] = useState(false);
   const [confettiBurst, setConfettiBurst] = useState(0);
+  const [captureChoiceBusy, setCaptureChoiceBusy] = useState(false);
   const [readerSettings, updateReaderSettings] = useReaderSettings();
   const hydratingRef = useRef(false);
   const lastPersistRef = useRef(null);
@@ -316,6 +319,38 @@ function App() {
     setError("");
     setCopyStatus("");
     setSegmentsOpen(false);
+  };
+
+  // A newer capture of this page is waiting (extension): keep the saved
+  // training and its progress, or slice the new capture and start over
+  const handleKeepSaved = async () => {
+    setCaptureChoiceBusy(true);
+    try {
+      await trainingSource.keepSavedTraining(training);
+      setTrainingState((previous) =>
+        previous.training
+          ? { ...previous, training: { ...previous.training, pendingCapture: null } }
+          : previous,
+      );
+    } catch (keepError) {
+      setError(keepError.message || "Unable to keep the saved training.");
+    } finally {
+      setCaptureChoiceBusy(false);
+    }
+  };
+
+  const handleReslice = async () => {
+    setCaptureChoiceBusy(true);
+    try {
+      setError("");
+      const payload = await trainingSource.resliceTraining(training);
+      setSegmentsOpen(false);
+      hydrateTraining(payload);
+    } catch (resliceError) {
+      setError(resliceError.message || "Unable to re-slice the page.");
+    } finally {
+      setCaptureChoiceBusy(false);
+    }
   };
 
   // Keyboard navigation: arrow keys move between segments
@@ -648,6 +683,32 @@ function App() {
     </p>
   ) : null;
 
+  if (!training && capabilities.library) {
+    return (
+      <div className="app-shell is-landing">
+        <header className="topbar">
+          <button
+            type="button"
+            className="brand brand-button"
+            onClick={handleReset}
+            aria-label="Sliced Learning library"
+          >
+            <LogoMark />
+            <span>Sliced Learning</span>
+          </button>
+          <ReaderSettings
+            settings={readerSettings}
+            onChange={updateReaderSettings}
+            showTypography={false}
+          />
+        </header>
+        <main className="landing library">
+          <Library error={error} loading={loading} />
+        </main>
+      </div>
+    );
+  }
+
   if (!training) {
     return (
       <div className="app-shell is-landing">
@@ -768,6 +829,11 @@ function App() {
 
   const isLastSegment = activeIndex === totalSegments - 1;
   const typeLabel = getContentTypeLabel(training.type);
+  const description =
+    trainingSource.describeTraining?.(training) || getTrainingDescription(training);
+  const trainingNotes = trainingSource.getTrainingNotes?.(training) ?? [];
+  const pendingCapture = training.pendingCapture;
+  const savedAt = formatShortDateTime(training.capturedAt);
 
   return (
     <div className="app-shell is-learning">
@@ -908,6 +974,32 @@ function App() {
       </aside>
 
       <main className="content">
+        {pendingCapture && (
+          <section className="completion-banner capture-banner" role="status">
+            <p className="capture-banner-text">
+              Saved training from {savedAt || "an earlier capture"}. Continue, or
+              Re-slice from the page you just captured.
+            </p>
+            <div className="completion-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={handleKeepSaved}
+                disabled={captureChoiceBusy}
+              >
+                Continue
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleReslice}
+                disabled={captureChoiceBusy}
+              >
+                Re-slice
+              </button>
+            </div>
+          </section>
+        )}
         {allDone && (
           <section className="completion-banner" role="status">
             <span className="completion-icon">
@@ -937,7 +1029,16 @@ function App() {
                 </span>
               )}
               <h2>{training.title}</h2>
-              <p className="segment-meta">{getTrainingDescription(training)}</p>
+              <p className="segment-meta">{description}</p>
+              {trainingNotes.map((note) => (
+                <p
+                  key={note.id}
+                  className="segment-meta segment-note"
+                  title={note.detail || undefined}
+                >
+                  {note.text}
+                </p>
+              ))}
             </div>
             <span className="segment-counter">
               Segment {activeIndex + 1} / {totalSegments}

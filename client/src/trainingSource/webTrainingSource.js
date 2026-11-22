@@ -115,6 +115,7 @@ export const webTrainingSource = {
     examples: true,
     shareLinks: true,
     openOriginal: false,
+    library: false,
   },
 
   process: (url) => processUrl(url),

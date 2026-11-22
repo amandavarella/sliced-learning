@@ -4,9 +4,12 @@
 //   npm run smoke
 //
 // It launches Chromium with dist/ loaded, opens a public GitHub README, drives
-// the toolbar click through the service worker, and checks the reader slices
-// the page, saves progress across a reload, reuses the reader tab on a second
-// click, shows the unsupported message, and logs no console errors.
+// the toolbar click through the service worker, and checks that the reader:
+// slices the page with its title, kind and Google Fonts; saves progress
+// across a reload; lists the training in the Library; on a second click
+// reuses the tab and offers Continue (keeps progress) or Re-slice (resets
+// it); re-slices on ?reslice=1; deletes from the Library after a confirm;
+// shows the unsupported message with a link back; and logs no console errors.
 //
 // Playwright cannot click the toolbar button, and a click driven from the
 // service worker does not grant activeTab. So the test loads a copy of dist/
@@ -128,6 +131,27 @@ try {
   assert(bodyChars > 200, `segment body has only ${bodyChars} characters`);
   assert((await reader.locator('a[aria-label="Open original"]').count()) === 1, "Open original link missing");
   assert((await reader.locator("#url-input").count()) === 0, "URL form should be hidden");
+  results.description = await reader.locator(".segment-meta").first().innerText();
+  assert(results.description.startsWith("GitHub file · "), `description lacks the kind: ${results.description}`);
+  assert(results.title === (await reader.locator(".segment-header h2").innerText()), "document.title is not the training title");
+
+  // The Google Fonts stylesheet loads under the extension page CSP
+  results.fonts = await reader.evaluate(async () => {
+    await document.fonts.ready;
+    const loaded = [...document.fonts]
+      .filter((face) => face.status === "loaded")
+      .map((face) => face.family.replace(/"/g, ""));
+    return {
+      bodyFontFamily: getComputedStyle(document.body).fontFamily,
+      bodyFontSize: getComputedStyle(document.body).fontSize,
+      loadedFamilies: [...new Set(loaded)],
+      stylesheet: [...document.styleSheets].some((sheet) => sheet.href?.startsWith("https://fonts.googleapis.com/")),
+    };
+  });
+  assert(results.fonts.bodyFontFamily.includes("Inter"), `body font is ${results.fonts.bodyFontFamily}`);
+  assert(results.fonts.loadedFamilies.includes("Inter"), `Inter did not load: ${results.fonts.loadedFamilies}`);
+  // Chrome's default extension stylesheet sets body to system-ui at 75%; reader.css undoes it
+  assert(results.fonts.bodyFontSize === "16px", `body font size is ${results.fonts.bodyFontSize}`);
 
   const stored = await worker.evaluate(() => chrome.storage.local.get(null));
   const keys = Object.keys(stored);
@@ -148,18 +172,160 @@ try {
   results.counter = counterAfter;
   assert(results.progressPersisted, `progress lost on reload (${counterBefore} vs ${counterAfter}, ${firstClass})`);
 
-  // A second click on the same page focuses the open reader and keeps progress
+  const trainingKey = keys.find((key) => key.startsWith("training:"));
+  const storedProgress = async () => {
+    const all = await worker.evaluate(() => chrome.storage.local.get(null));
+    return {
+      completed: all[trainingKey]?.progress?.completed?.filter(Boolean).length ?? null,
+      hasCapture: Object.keys(all).some((key) => key.startsWith("capture:")),
+    };
+  };
+
+  // A second click on the same page focuses and reloads the open reader,
+  // which offers to continue the saved training or re-slice the new capture
   const pagesBefore = context.pages().length;
   await clickFor(source.url());
-  await reader.waitForTimeout(500);
+  await reader.waitForSelector(".capture-banner", { timeout: 15000 });
   results.secondClickReusedTab = context.pages().length === pagesBefore;
   assert(results.secondClickReusedTab, "second click opened another tab");
+  results.bannerText = await reader.locator(".capture-banner-text").innerText();
+  assert(results.bannerText.startsWith("Saved training from "), `banner text: ${results.bannerText}`);
+  assert((await storedProgress()).hasCapture, "second click stored no capture");
+
+  await reader.click('.capture-banner button:has-text("Continue")');
+  await reader.waitForSelector(".capture-banner", { state: "detached", timeout: 5000 });
+  assert(!(await storedProgress()).hasCapture, "Continue left the capture behind");
   await reader.reload();
   await reader.waitForSelector(".segment-item", { timeout: 15000 });
+  assert((await reader.locator(".capture-banner").count()) === 0, "banner came back after Continue");
   assert(
     (await reader.locator(".segment-counter").innerText()) === counterBefore,
-    "second click reset progress",
+    "Continue lost progress",
   );
+  results.continueKeptProgress = true;
+
+  // A third click, then Re-slice: the training is sliced again from scratch
+  await clickFor(source.url());
+  await reader.waitForSelector(".capture-banner", { timeout: 15000 });
+  await reader.click('.capture-banner button:has-text("Re-slice")');
+  await reader.waitForSelector(".capture-banner", { state: "detached", timeout: 15000 });
+  await reader.waitForTimeout(300);
+  const afterReslice = await storedProgress();
+  results.resliceCounter = await reader.locator(".segment-counter").innerText();
+  assert(results.resliceCounter.startsWith("Segment 1 /"), `Re-slice kept the position: ${results.resliceCounter}`);
+  assert((await reader.locator(".segment-item.completed").count()) === 0, "Re-slice kept completed segments");
+  assert(afterReslice.completed === 0 && !afterReslice.hasCapture, `Re-slice storage: ${JSON.stringify(afterReslice)}`);
+  results.resliceResetProgress = true;
+
+  // ?reslice=1 re-slices the waiting capture without asking, then drops the flag
+  await reader.click(".segment-footer .primary-button");
+  await reader.waitForSelector(".segment-item.completed", { timeout: 5000 });
+  await reader.waitForTimeout(300);
+  await clickFor(source.url());
+  await reader.waitForSelector(".capture-banner", { timeout: 15000 });
+  await reader.goto(`${reader.url()}&reslice=1`);
+  await reader.waitForSelector(".segment-item", { timeout: 15000 });
+  await reader.waitForTimeout(300);
+  results.resliceParam = {
+    banner: await reader.locator(".capture-banner").count(),
+    completed: await reader.locator(".segment-item.completed").count(),
+    url: new URL(reader.url()).search,
+    stored: await storedProgress(),
+  };
+  assert(
+    results.resliceParam.banner === 0 &&
+      results.resliceParam.completed === 0 &&
+      !results.resliceParam.url.includes("reslice") &&
+      results.resliceParam.stored.completed === 0 &&
+      !results.resliceParam.stored.hasCapture,
+    `?reslice=1 did not re-slice: ${JSON.stringify(results.resliceParam)}`,
+  );
+
+  // Progress for the Library check: one segment done
+  await reader.click(".segment-footer .primary-button");
+  await reader.waitForSelector(".segment-item.completed", { timeout: 5000 });
+  await reader.waitForTimeout(300);
+
+  // An older Confluence training, written by hand, to check the order and the badge
+  const olderKey = "https://mock.atlassian.net/wiki/spaces/TEST/pages/1";
+  await worker.evaluate(
+    (key) =>
+      chrome.storage.local.set({
+        [`training:${key}`]: {
+          payload: {
+            type: "article",
+            title: "Older Confluence page",
+            sourceUrl: key,
+            sourceKind: "confluence",
+            segmentMinutes: 2,
+            totalSegments: 2,
+            segments: [
+              { id: "a", label: "One", html: "<p>One</p>" },
+              { id: "b", label: "Two", html: "<p>Two</p>" },
+            ],
+          },
+          progress: { completed: [true, true], activeIndex: 1 },
+          capturedAt: "2026-01-01T00:00:00.000Z",
+          progressUpdatedAt: "2026-01-02T00:00:00.000Z",
+        },
+      }),
+    olderKey,
+  );
+
+  // The brand button goes back to the Library, which lists both, newest first
+  await reader.click(".sidebar .brand-button");
+  await reader.waitForSelector(".library-item", { timeout: 15000 });
+  assert(new URL(reader.url()).search === "", `library URL keeps a query: ${reader.url()}`);
+  results.library = await reader.evaluate(() =>
+    [...document.querySelectorAll(".library-item")].map((item) => ({
+      title: item.querySelector(".library-title")?.textContent,
+      badge: item.querySelector(".type-pill")?.textContent,
+      kind: item.querySelector(".library-kind")?.textContent,
+      stats: item.querySelector(".progress-stats")?.textContent,
+      href: item.querySelector(".library-link")?.getAttribute("href"),
+    })),
+  );
+  results.libraryStats = await reader.locator(".library-stat").allInnerTexts();
+  const [first, second] = results.library;
+  assert(results.library.length === 2, `library rows: ${results.library.length}`);
+  assert(first.title === results.title && first.badge === "GitHub" && first.kind === "GitHub file", `first row: ${JSON.stringify(first)}`);
+  assert(first.stats.startsWith(`1 of ${segmentCount} done`), `first row stats: ${first.stats}`);
+  assert(second.badge === "Confluence" && second.stats.startsWith("2 of 2 done"), `second row: ${JSON.stringify(second)}`);
+  assert(results.libraryStats.some((text) => text.startsWith("Storage used")), "no storage figure");
+
+  // A row opens its training
+  await reader.click(".library-item .library-link >> nth=0");
+  await reader.waitForSelector(".segment-item", { timeout: 15000 });
+  assert((await reader.title()) === results.title, "library row opened the wrong training");
+  await reader.click(".sidebar .brand-button");
+  await reader.waitForSelector(".library-item", { timeout: 15000 });
+
+  // Delete asks first; Cancel keeps the row, Delete removes training and capture
+  await clickFor(source.url());
+  await reader.waitForTimeout(500);
+  const libraryPage = await context.newPage();
+  await libraryPage.goto(`chrome-extension://${extensionId}/reader.html`);
+  await libraryPage.waitForSelector(".library-item", { timeout: 15000 });
+  const deleteButton = libraryPage.locator(`.library-item:has-text("${results.title}") button:has-text("Delete")`);
+  await deleteButton.click();
+  await libraryPage.click('.library-item button:has-text("Cancel")');
+  assert((await libraryPage.locator(".library-item").count()) === 2, "Cancel removed a row");
+  await deleteButton.click();
+  await libraryPage.click(".library-delete");
+  await libraryPage.waitForFunction(() => document.querySelectorAll(".library-item").length === 1, null, {
+    timeout: 5000,
+  });
+  const afterDelete = Object.keys(await worker.evaluate(() => chrome.storage.local.get(null)));
+  results.afterDeleteKeys = afterDelete;
+  assert(
+    !afterDelete.includes(trainingKey) && !afterDelete.some((key) => key.startsWith(`capture:`)),
+    `delete left keys behind: ${afterDelete}`,
+  );
+  await libraryPage.click('.library-item button:has-text("Delete")');
+  await libraryPage.click(".library-delete");
+  await libraryPage.waitForSelector(".library-empty", { timeout: 5000 });
+  results.emptyLibrary = await libraryPage.locator(".library-empty h2").innerText();
+  await libraryPage.close();
 
   // Unsupported pages open the reader with a short message
   const unsupported = await waitForReader(() =>
@@ -167,6 +333,13 @@ try {
   );
   await unsupported.waitForSelector(".error-message", { timeout: 15000 });
   results.unsupportedMessage = await unsupported.locator(".error-message").innerText();
+  assert(
+    results.unsupportedMessage.includes("github.com") && results.unsupportedMessage.includes("Confluence"),
+    `unsupported message: ${results.unsupportedMessage}`,
+  );
+  await unsupported.click('a:has-text("Back to your library")');
+  await unsupported.waitForSelector(".library-empty", { timeout: 15000 });
+  results.unsupportedLinksToLibrary = true;
 
   results.consoleErrors = readerErrors;
   assert(readerErrors.length === 0, `reader console errors: ${readerErrors.join(" | ")}`);

@@ -1,5 +1,6 @@
 import { createReaderApp } from "../../client/src/ReaderRoot.jsx";
 import { extensionTrainingSource } from "./extensionTrainingSource.js";
+import "./reader.css";
 
 // The web app applies saved display settings with an inline script before
 // first paint. Extension pages forbid inline scripts, so do it here instead.

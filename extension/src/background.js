@@ -14,7 +14,9 @@ const readerUrl = (params) => {
   return chrome.runtime.getURL(`${READER_PATH}?${search}`);
 };
 
-// Reuse a reader tab that already shows this URL instead of stacking copies
+// Reuse a reader tab that already shows this URL instead of stacking copies.
+// The tab is reloaded so it reads the capture just stored and can offer to
+// re-slice it; progress is saved on every move, so nothing is lost.
 const openOrFocusReader = async (url) => {
   const contexts = await chrome.runtime.getContexts({
     contextTypes: ["TAB"],
@@ -24,6 +26,7 @@ const openOrFocusReader = async (url) => {
   if (existing) {
     const tab = await chrome.tabs.update(existing.tabId, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
+    await chrome.tabs.reload(tab.id);
     return tab;
   }
   return chrome.tabs.create({ url });
@@ -51,8 +54,8 @@ export const handleActionClick = async (tab) => {
 
   const key = normaliseUrl(tab.url);
   const result = await capture(tab.id);
-  // Stored even when a training already exists: the reader keeps the existing
-  // training and only slices this capture when asked to re-slice
+  // Stored even when a training already exists: the reader then asks whether
+  // to continue the saved training or re-slice from this capture
   await writeCapture(key, { ...result, sourceUrl: result.sourceUrl || tab.url });
   return openOrFocusReader(readerUrl({ key }));
 };
