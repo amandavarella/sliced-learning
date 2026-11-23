@@ -21,8 +21,13 @@
 // service worker does not grant activeTab. The build in dist/ is not changed.
 //
 // Each reader is checked for the wide layout at 1600x900: the content
-// container has the is-wide class and the card is at least 90% of the width
-// beside the sidebar. Set SCREENSHOT_DIR to keep a screenshot of the first.
+// container has the is-wide class, the card is centred in the content area
+// (within 4px) and its width is max(65% of the content's inner width,
+// min(800px, inner width)) within 2%. At 1600x900 the 800px floor is the
+// larger of the two, so the 65% share is also checked at 2200px wide, where
+// it wins. At a 1000px wide viewport the card is at least
+// min(800px, content width). Set SCREENSHOT_DIR to keep a screenshot of the
+// first at 1600x900.
 //
 // Environment: PLAYWRIGHT_MODULE, CHROMIUM_PATH and HEADED=1, as in
 // e2e-smoke.mjs.
@@ -188,10 +193,29 @@ const waitForReader = async (open) => {
   throw new Error("The reader tab did not open");
 };
 
-// Confluence trainings use the wide layout: the content card fills the
-// width beside the sidebar. Measured at 1600x900; the first page also
-// leaves a screenshot when SCREENSHOT_DIR is set.
+// Confluence trainings use the wide layout: the content card is centred at
+// 65% of the content area, never narrower than 800px when there is room.
+// Measured at 1600x900 and again at 1000px wide; the first page also leaves
+// a screenshot at 1600x900 when SCREENSHOT_DIR is set.
 const VIEWPORT = { width: 1600, height: 900 };
+const BROAD_VIEWPORT = { width: 2200, height: 900 };
+const NARROW_VIEWPORT = { width: 1000, height: 900 };
+const WIDE_SHARE = 0.65;
+const CARD_FLOOR = 800;
+const expectedCard = (inner) => Math.max(inner * WIDE_SHARE, Math.min(CARD_FLOOR, inner));
+// Width within 2% of the expected value and centred within 4px
+const checkWide = (label, layout, problems) => {
+  const expected = expectedCard(layout.contentInner);
+  const share = layout.card / layout.contentInner;
+  if (Math.abs(layout.card - expected) > expected * 0.02) {
+    problems.push(
+      `${label}: card ${layout.card}px (${(share * 100).toFixed(1)}% of ${layout.contentInner}px), expected ${expected.toFixed(0)}px within 2%`,
+    );
+  }
+  if (Math.abs(layout.cardCentre - layout.contentCentre) > 4) {
+    problems.push(`${label}: card centre ${layout.cardCentre}px, content centre ${layout.contentCentre}px, expected within 4px`);
+  }
+};
 const measureLayout = (reader) =>
   reader.evaluate(() => {
     const content = document.querySelector("main.content");
@@ -199,7 +223,17 @@ const measureLayout = (reader) =>
     const sidebar = document.querySelector(".sidebar");
     const article = document.querySelector(".article-segment-content");
     const tables = [...document.querySelectorAll(".article-segment-content table")];
+    const style = content ? window.getComputedStyle(content) : null;
+    const contentBox = content?.getBoundingClientRect();
+    const cardBox = card?.getBoundingClientRect();
+    const paddingLeft = style ? parseFloat(style.paddingLeft) : 0;
+    const paddingRight = style ? parseFloat(style.paddingRight) : 0;
+    const contentInner = content ? content.clientWidth - paddingLeft - paddingRight : 0;
+    const innerLeft = contentBox ? contentBox.left + content.clientLeft + paddingLeft : 0;
     return {
+      contentInner,
+      contentCentre: innerLeft + contentInner / 2,
+      cardCentre: cardBox ? cardBox.left + cardBox.width / 2 : 0,
       wideClass: content?.classList.contains("is-wide") ?? false,
       viewport: window.innerWidth,
       sidebar: sidebar?.getBoundingClientRect().width ?? 0,
@@ -237,6 +271,12 @@ try {
         await reader.waitForTimeout(800);
         await reader.screenshot({ path: join(process.env.SCREENSHOT_DIR, "confluence-reader-1600x900.png") });
       }
+      await reader.setViewportSize(BROAD_VIEWPORT);
+      await reader.waitForTimeout(100);
+      const broad = await measureLayout(reader);
+      await reader.setViewportSize(NARROW_VIEWPORT);
+      await reader.waitForTimeout(100);
+      const narrow = await measureLayout(reader);
 
       const stored = await worker.evaluate(() => chrome.storage.local.get(null));
       const entry = Object.entries(stored).find(
@@ -259,6 +299,8 @@ try {
         details: (html.match(/<details/g) || []).length,
         stats,
         layout,
+        broad,
+        narrow,
       });
 
       const problems = [];
@@ -269,9 +311,17 @@ try {
       if (result.dataImages < page.minDataImages) problems.push(`${result.dataImages} data: images, expected ${page.minDataImages}+`);
       if (key !== `training:${SITE}/wiki/spaces/TEST/pages/${page.id}`) problems.push(`key ${key} keeps the slug`);
       if (/emoticon|toc-macro|status-macro|jira-issue/.test(html)) problems.push("Confluence macro markup left in the training");
-      const available = layout.viewport - layout.sidebar;
       if (!layout.wideClass) problems.push("content container lacks the is-wide class");
-      if (layout.card < available * 0.9) problems.push(`card ${layout.card}px wide, expected at least 90% of ${available}px`);
+      checkWide(`${layout.viewport}px`, layout, problems);
+      checkWide(`${broad.viewport}px`, broad, problems);
+      if (broad.contentInner * WIDE_SHARE <= CARD_FLOOR) {
+        problems.push(`at ${broad.viewport}px the content is ${broad.contentInner}px, too narrow to exercise the 65% share`);
+      }
+      const narrowMin = Math.min(CARD_FLOOR, narrow.contentInner);
+      if (narrow.card < narrowMin - 0.5) {
+        problems.push(`at ${narrow.viewport}px the card is ${narrow.card}px, expected at least ${narrowMin}px`);
+      }
+      if (narrow.pageScrollsSideways) problems.push(`the reader scrolls sideways at ${narrow.viewport}px`);
       if (!layout.tablesFit) problems.push("a table is wider than the article body");
       if (layout.pageScrollsSideways) problems.push("the reader scrolls sideways");
       result.ok = problems.length === 0;
