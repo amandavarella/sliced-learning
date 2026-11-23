@@ -121,3 +121,122 @@ test("sliceHtml falls back to plain text when the HTML has no sections", () => {
   assert.equal(payload.segments[1].html, null);
   assert.equal(payload.segments[1].wordCount, 10);
 });
+
+// Builds a glossary table like the one in the bug report: bold acronyms and
+// inline code in the cells, wrapped in GitHub's table element
+const glossaryTable = (rows) =>
+  `<markdown-accessiblity-table><table><thead><tr><th>Acronym</th><th>Expansion</th><th>In one line</th></tr></thead><tbody>${Array.from(
+    { length: rows },
+    (_, index) =>
+      `<tr><td><strong>A${index}</strong></td><td>Expansion number ${index}</td><td>Logging in with <code>x${index}</code> ${words(12, "detail")}</td></tr>`,
+  ).join("")}</tbody></table></markdown-accessiblity-table>`;
+
+// Parses a segment's HTML the way the reader renders it (innerHTML), where
+// table rows outside a table are dropped by the HTML parser
+const rendered = (html) => {
+  const container = new JSDOM("").window.document.createElement("div");
+  container.innerHTML = html;
+  return container;
+};
+
+test("sliceHtml splits a table larger than a segment by whole rows, repeating the header", () => {
+  const payload = sliceHtml({
+    html: `<p>Intro</p>${glossaryTable(40)}<p>After</p>`,
+    sourceUrl: "https://example.com",
+    dom: nodeDom,
+    sanitize,
+  });
+
+  assert.ok(payload.totalSegments >= 2, "a 40-row table should not fit one segment");
+  let rows = 0;
+  for (const segment of payload.segments) {
+    const container = rendered(segment.html);
+    const tables = container.querySelectorAll("table");
+    assert.equal(tables.length, 1, `segment ${segment.id} has ${tables.length} tables`);
+    assert.equal(tables[0].querySelector("thead th").textContent, "Acronym");
+    assert.ok(tables[0].querySelector("tbody tr td strong"));
+    assert.ok(tables[0].querySelector("tbody tr td code"));
+    // Every row is complete
+    for (const row of tables[0].querySelectorAll("tbody tr")) {
+      assert.equal(row.querySelectorAll("td").length, 3);
+    }
+    rows += tables[0].querySelectorAll("tbody tr").length;
+    assert.ok(segment.html.includes("<table") && segment.html.includes("<tr"));
+  }
+  assert.equal(rows, 40);
+  assert.ok(payload.segments[0].html.startsWith("<p>Intro</p><table>"));
+  assert.ok(payload.segments.at(-1).html.endsWith("</table><p>After</p>"));
+});
+
+test("chunkHtmlContent drops a table part with no rows and repeats the header uncounted", () => {
+  // 395 words of text, then a table whose first row does not fit: the table
+  // starts in the next segment instead of leaving an empty header behind. A
+  // repeated header is not counted again, and neither is one that was dropped
+  const html = `<p>${words(395)}</p><table><thead><tr><th>Head one</th></tr></thead><tbody><tr><td>${words(300, "row")}</td></tr><tr><td>${words(300, "row")}</td></tr></tbody></table>`;
+  const segments = chunkHtmlContent(html, 400, nodeDom);
+
+  assert.equal(segments[0].html, `<p>${words(395)}</p>`);
+  assert.equal(segments[0].wordCount, 395);
+  assert.equal(segments.length, 3);
+  for (const segment of segments.slice(1)) {
+    assert.ok(segment.html.startsWith("<table><thead><tr><th>Head one</th></tr></thead><tbody><tr>"));
+    assert.ok(segment.html.endsWith("</tr></tbody></table>"));
+  }
+  assert.deepEqual(segments.map((segment) => segment.wordCount), [395, 300, 300]);
+});
+
+test("chunkHtmlContent keeps an oversized code block, figure and table row whole", () => {
+  for (const html of [
+    `<pre><code>${words(500, "code")}</code></pre>`,
+    `<figure><img src="https://example.com/a.png" alt=""><figcaption>${words(500)}</figcaption></figure>`,
+    `<table><tbody><tr><td>${words(250)} </td><td>${words(250)}</td></tr></tbody></table>`,
+  ]) {
+    const segments = chunkHtmlContent(`<p>${words(10, "lead")}</p>${html}<p>${words(10, "tail")}</p>`, 400, nodeDom);
+    assert.equal(segments.length, 3, html.slice(0, 20));
+    assert.equal(segments[1].html, html);
+    assert.equal(segments[1].wordCount, 500);
+  }
+});
+
+test("chunkHtmlContent splits a long list into lists, and an ordered list keeps counting", () => {
+  const items = Array.from({ length: 10 }, (_, index) => `<li>item${index} ${words(49)}</li>`).join("");
+  const segments = chunkHtmlContent(`<ol class="steps">${items}</ol>`, 200, nodeDom);
+
+  assert.equal(segments.length, 3);
+  assert.ok(segments[0].html.startsWith('<ol class="steps"><li>item0'));
+  assert.ok(segments[1].html.startsWith('<ol class="steps" start="5"><li>item4'));
+  assert.ok(segments[2].html.startsWith('<ol class="steps" start="9"><li>item8'));
+  for (const segment of segments) {
+    assert.ok(segment.html.endsWith("</li></ol>"));
+  }
+
+  const unordered = chunkHtmlContent(`<ul>${items}</ul>`, 200, nodeDom);
+  assert.ok(unordered.every((segment) => segment.html.startsWith("<ul><li>") && !segment.html.includes("start=")));
+});
+
+test("chunkHtmlContent splits blockquotes and details inside their wrapper, repeating the summary", () => {
+  const paragraphs = Array.from({ length: 4 }, (_, index) => `<p>para${index} ${words(149)}</p>`).join("");
+
+  const quote = chunkHtmlContent(`<blockquote>${paragraphs}</blockquote>`, 400, nodeDom);
+  assert.equal(quote.length, 2);
+  assert.ok(quote.every((segment) => segment.html.startsWith("<blockquote><p>") && segment.html.endsWith("</p></blockquote>")));
+
+  const details = chunkHtmlContent(`<details open=""><summary>More</summary>${paragraphs}</details>`, 400, nodeDom);
+  assert.equal(details.length, 2);
+  assert.ok(details.every((segment) => segment.html.startsWith('<details open=""><summary>More</summary><p>')));
+  assert.deepEqual(details.map((segment) => segment.wordCount), [301, 300]);
+});
+
+test("chunkHtmlContent splits nested lists at the inner items", () => {
+  const inner = Array.from({ length: 6 }, (_, index) => `<li>inner${index} ${words(99)}</li>`).join("");
+  const segments = chunkHtmlContent(`<ul><li>outer <ul>${inner}</ul></li><li>last</li></ul>`, 250, nodeDom);
+
+  assert.equal(segments.length, 3);
+  for (const segment of segments) {
+    const container = rendered(segment.html);
+    assert.equal(container.children.length, 1);
+    assert.equal(container.firstElementChild.tagName, "UL");
+  }
+  assert.ok(segments[1].html.startsWith("<ul><li><ul><li>inner2"));
+  assert.ok(segments[2].html.endsWith("</ul></li><li>last</li></ul>"));
+});
