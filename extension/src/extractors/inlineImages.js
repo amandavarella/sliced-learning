@@ -68,7 +68,7 @@ export const inlineImages = async (bodyElement, options = {}) => {
     try {
       const response = await fetchImpl(url, { signal: controller?.signal });
       if (!response?.ok) {
-        return { reason: "fetch-failed" };
+        return { reason: "fetch-failed", error: `HTTP ${response?.status ?? "no response"}` };
       }
       const mime = mimeOf(response);
       if (!mime.startsWith("image/")) {

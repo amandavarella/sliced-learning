@@ -150,13 +150,14 @@ test("leaves firstError null when a fallback URL recovers the image", async () =
   assert.equal(stats.firstError, null);
 });
 
-test("leaves firstError null when no fetch threw", async () => {
+test("records the HTTP status in firstError when the response is not ok", async () => {
   const body = bodyWith(['src="https://x.test/missing.png"']);
   const { fetchImpl } = fakeFetch({ "https://x.test/missing.png": () => response({ status: 404 }) });
 
   const stats = await inlineImages(body, { fetchImpl });
 
-  assert.equal(stats.firstError, null);
+  assert.equal(stats.reasons["fetch-failed"], 1);
+  assert.equal(stats.firstError, "HTTP 404");
 });
 
 test("tries the camo fallback when the canonical URL fails", async () => {
