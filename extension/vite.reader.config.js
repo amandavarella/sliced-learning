@@ -2,6 +2,8 @@
 // ../client/src, which would otherwise resolve react from client/node_modules.
 // The aliases pin react and react-dom (and their subpaths, such as
 // react/jsx-runtime) to this package's copy so the bundle holds one React.
+// mermaid, which client/src loads with a dynamic import, is pinned the same
+// way so the build does not need client/node_modules.
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -16,6 +18,7 @@ export default defineConfig({
     alias: {
       react: here("./node_modules/react"),
       "react-dom": here("./node_modules/react-dom"),
+      mermaid: here("./node_modules/mermaid"),
     },
     dedupe: ["react", "react-dom"],
   },
