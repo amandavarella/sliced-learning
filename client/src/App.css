@@ -954,15 +954,15 @@ svg {
 }
 
 /* Wide layout (a source's getLayout returns wide: true, used for Confluence
-   pages): the card and its banners fill the width beside the sidebar, and the
-   article body drops the reading measure so wide tables have room. The
-   padding scale stays the same. */
-.content.is-wide {
-  align-items: stretch;
-}
-
+   pages): the card and its banners stay centred and take 65% of the content
+   area, but never less than the normal 800px card when there is room. The
+   article body drops the reading measure so text and wide tables fill the
+   card. The padding scale stays the same. Dragged reading margins
+   (.has-margins below) override this width. */
 .content.is-wide :is(.segment-view, .completion-banner) {
+  width: 65%;
   max-width: none;
+  min-width: min(800px, 100%);
 }
 
 .content.is-wide .article-segment-content {
@@ -976,6 +976,7 @@ svg {
 .content.has-margins :is(.segment-view, .completion-banner) {
   align-self: stretch;
   width: auto;
+  min-width: 0;
   max-width: none;
   margin-left: var(--reading-margin-left, 0px);
   margin-right: var(--reading-margin-right, 0px);
