@@ -93,10 +93,59 @@ const unwrapContainer = (node) => {
   return current;
 };
 
+// Elements that are never split, even when they hold more words than one
+// segment: a code block or a figure cut in two reads worse than a long
+// segment, and a table row is the smallest piece a table splits into.
+const KEEP_WHOLE_TAGS = new Set(["PRE", "FIGURE", "TR"]);
+
+// Elements that split across segments with their structure kept: each part is
+// wrapped in a copy of the element, so a long table becomes two or more
+// tables, a long list two or more lists. Other oversized elements (div,
+// section, p) are descended into and their wrapper dropped, as before.
+const SPLIT_WITH_WRAPPER_TAGS = new Set([
+  "TABLE",
+  "THEAD",
+  "TBODY",
+  "TFOOT",
+  "UL",
+  "OL",
+  "DL",
+  "LI",
+  "BLOCKQUOTE",
+  "DETAILS",
+]);
+
+// Children repeated at the top of every part of a split element: a table's
+// caption and header rows, a details element's summary.
+const HEADER_TAGS = {
+  TABLE: new Set(["CAPTION", "THEAD", "COLGROUP"]),
+  DETAILS: new Set(["SUMMARY"]),
+};
+
+const isHeaderOf = (frame, node) =>
+  Boolean(frame && node.nodeType === NODE_TYPE.ELEMENT && HEADER_TAGS[frame.node.nodeName]?.has(node.nodeName));
+
+const closingTag = (node) => `</${node.nodeName.toLowerCase()}>`;
+
+// The start tag of a part of a split element. An ordered list continued from
+// the previous segment gets a start attribute so its numbering carries on.
+const openingTag = (frame) => {
+  const clone = frame.node.cloneNode(false);
+  if (frame.node.nodeName === "OL" && frame.itemCount) {
+    const start = Number.parseInt(frame.node.getAttribute("start") ?? "1", 10);
+    clone.setAttribute("start", String((Number.isNaN(start) ? 1 : start) + frame.itemCount));
+  }
+  const html = clone.outerHTML;
+  const close = closingTag(frame.node);
+  return html.endsWith(close) ? html.slice(0, -close.length) : html;
+};
+
 // Splits sanitised HTML into segments of at most maxWordsPerSegment words,
-// keeping whole block elements together where they fit. `parseHtml` turns an
-// HTML string into a Document (see dom/node.js and dom/browser.js), which keeps
-// this module free of any DOM library.
+// keeping whole block elements together where they fit. An element too big
+// for one segment is kept whole (KEEP_WHOLE_TAGS), split into parts that each
+// keep its wrapper (SPLIT_WITH_WRAPPER_TAGS), or descended into. `parseHtml`
+// turns an HTML string into a Document (see dom/node.js and dom/browser.js),
+// which keeps this module free of any DOM library.
 export const chunkHtmlContent = (html, maxWordsPerSegment, { parseHtml } = {}) => {
   if (!html || !html.trim()) {
     return [];
@@ -113,21 +162,55 @@ export const chunkHtmlContent = (html, maxWordsPerSegment, { parseHtml } = {}) =
   let currentHtmlParts = [];
   let currentTextParts = [];
   let currentWordCount = 0;
+  let currentHasContent = false;
+  // Split elements currently open, outermost first. Each frame records where
+  // its start tag sits in the current segment (to drop it if nothing follows),
+  // whether this segment holds any of its content yet, its header HTML, and
+  // (for lists) how many items it has emitted so far.
+  const openFrames = [];
+
+  const reopenFrames = () => {
+    for (const frame of openFrames) {
+      frame.openIndex = currentHtmlParts.length;
+      frame.openTextIndex = currentTextParts.length;
+      frame.openWordCount = currentWordCount;
+      frame.hasContent = false;
+      currentHtmlParts.push(openingTag(frame), ...frame.headers);
+    }
+  };
+
+  // Removes a split element that holds nothing but its start tag and headers
+  const dropFrame = (frame) => {
+    currentHtmlParts.length = frame.openIndex;
+    currentTextParts.length = frame.openTextIndex;
+    currentWordCount = frame.openWordCount;
+  };
 
   const pushSegment = () => {
-    if (!currentHtmlParts.length) {
-      return;
+    // Close the open split elements, innermost first. One with no content in
+    // this segment (opened just before the break) is dropped entirely.
+    for (let index = openFrames.length - 1; index >= 0; index -= 1) {
+      const frame = openFrames[index];
+      if (frame.hasContent) {
+        currentHtmlParts.push(closingTag(frame.node));
+      } else {
+        dropFrame(frame);
+      }
     }
 
-    segments.push({
-      html: currentHtmlParts.join(""),
-      text: collapseWhitespace(currentTextParts.join(" ")),
-      wordCount: currentWordCount,
-    });
+    if (currentHasContent) {
+      segments.push({
+        html: currentHtmlParts.join(""),
+        text: collapseWhitespace(currentTextParts.join(" ")),
+        wordCount: currentWordCount,
+      });
+    }
 
     currentHtmlParts = [];
     currentTextParts = [];
     currentWordCount = 0;
+    currentHasContent = false;
+    reopenFrames();
   };
 
   const appendChildren = (parent) => {
@@ -143,6 +226,27 @@ export const chunkHtmlContent = (html, maxWordsPerSegment, { parseHtml } = {}) =
     });
   };
 
+  const appendSplit = (node) => {
+    const frame = {
+      node,
+      openIndex: currentHtmlParts.length,
+      openTextIndex: currentTextParts.length,
+      openWordCount: currentWordCount,
+      hasContent: false,
+      headers: [],
+      itemCount: 0,
+    };
+    currentHtmlParts.push(openingTag(frame));
+    openFrames.push(frame);
+    appendChildren(node);
+    openFrames.pop();
+    if (frame.hasContent) {
+      currentHtmlParts.push(closingTag(node));
+    } else {
+      dropFrame(frame);
+    }
+  };
+
   const appendNode = (node) => {
     if (shouldSkipNode(node)) {
       return;
@@ -155,23 +259,17 @@ export const chunkHtmlContent = (html, maxWordsPerSegment, { parseHtml } = {}) =
 
     const nodeTextContent = node.textContent || "";
     const nodeWordCount = wordsIn(nodeTextContent);
+    const parentFrame = openFrames[openFrames.length - 1];
 
-    if (nodeWordCount > maxWordsPerSegment) {
-      if (node.nodeType === NODE_TYPE.ELEMENT) {
+    if (nodeWordCount > maxWordsPerSegment && node.nodeType === NODE_TYPE.ELEMENT) {
+      if (SPLIT_WITH_WRAPPER_TAGS.has(node.nodeName)) {
+        appendSplit(node);
+        return;
+      }
+      if (!KEEP_WHOLE_TAGS.has(node.nodeName)) {
         appendChildren(node);
         return;
       }
-
-      if (currentHtmlParts.length) {
-        pushSegment();
-      }
-
-      segments.push({
-        html: serialized,
-        text: collapseWhitespace(nodeTextContent),
-        wordCount: nodeWordCount,
-      });
-      return;
     }
 
     if (currentWordCount && currentWordCount + nodeWordCount > maxWordsPerSegment) {
@@ -185,6 +283,20 @@ export const chunkHtmlContent = (html, maxWordsPerSegment, { parseHtml } = {}) =
     }
 
     currentWordCount += nodeWordCount;
+
+    if (isHeaderOf(parentFrame, node)) {
+      // Repeated in later parts; on its own it is not a reason to keep a part
+      parentFrame.headers.push(serialized);
+      return;
+    }
+
+    currentHasContent = true;
+    for (const frame of openFrames) {
+      frame.hasContent = true;
+    }
+    if (parentFrame && node.nodeName === "LI") {
+      parentFrame.itemCount += 1;
+    }
   };
 
   appendChildren(root);

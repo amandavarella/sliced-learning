@@ -2,7 +2,8 @@
 // the live page is never touched, and returns the clone.
 //
 // - Drops GitHub UI inside rendered Markdown: heading permalinks, copy
-//   buttons and the overlay toggles around rendered diagrams.
+//   buttons with their tooltips and screen reader labels, and the overlay
+//   toggles around rendered diagrams.
 // - Replaces rendered diagrams (Mermaid and the other viewscreen formats),
 //   which live in a cross-origin iframe the capture cannot read, with their
 //   source as a code block plus a link to the original page.
@@ -16,6 +17,13 @@ const NOISE_SELECTORS = [
   "svg.octicon-link",
   "clipboard-copy",
   ".zeroclipboard-container",
+  ".ClipboardButton",
+  ".js-clipboard-copy",
+  // Tooltips carry a button's label as text ("Copy code to clipboard"). The
+  // sanitiser drops unknown tags such as tool-tip and button but keeps their
+  // text, so a tooltip left in would show up as a stray line in the reader
+  "tool-tip",
+  '[role="tooltip"]',
   "details.details-reset",
   "details.details-overlay",
   "details-dialog",
@@ -27,6 +35,12 @@ const DIAGRAM_CONTAINERS = [
   ".render-container",
   "iframe.render-viewer",
 ];
+
+// Elements next to a code block that are UI rather than content: the copy
+// button, its screen reader label, and popover feedback ("Copied!")
+const CODE_BLOCK_UI_SELECTORS = ["button", ".sr-only", ".visually-hidden", "[popover]", "[aria-live]"];
+const CODE_WRAPPER_CONTENT = "p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, blockquote, img, figure";
+const COPY_LABEL = /^(copy( code)?( to clipboard)?|copied!?)$/i;
 
 export const DIAGRAM_NOTE = "Diagram rendered on GitHub";
 
@@ -115,6 +129,47 @@ const replaceDiagrams = (root, pageUrl) => {
     }
   }
   return replaced;
+};
+
+// GitHub wraps each code block in a div with the copy UI beside the pre
+// (div.highlight, div.snippet-clipboard-content). Removes that UI, and any
+// leftover element or text that is only a copy label, from the wrapper
+// without touching the code itself.
+const removeCodeBlockUi = (root) => {
+  const wrappers = new Set();
+  for (const pre of root.querySelectorAll("pre")) {
+    const wrapper = pre.parentElement;
+    // Only a div that holds this one code block and no other content, so a
+    // list item or blockquote around a code block is never trimmed
+    if (
+      wrapper?.tagName === "DIV" &&
+      wrapper !== root &&
+      !wrapper.closest("pre") &&
+      wrapper.querySelectorAll("pre").length === 1 &&
+      !wrapper.querySelector(CODE_WRAPPER_CONTENT)
+    ) {
+      wrappers.add(wrapper);
+    }
+  }
+  const outsideCode = (node) => !node.parentElement?.closest("pre, code");
+
+  for (const wrapper of wrappers) {
+    for (const node of Array.from(wrapper.querySelectorAll(CODE_BLOCK_UI_SELECTORS.join(",")))) {
+      if (root.contains(node) && outsideCode(node)) {
+        node.remove();
+      }
+    }
+    for (const node of Array.from(wrapper.querySelectorAll("*"))) {
+      if (root.contains(node) && !node.matches("pre, code") && outsideCode(node) && COPY_LABEL.test(node.textContent.trim())) {
+        node.remove();
+      }
+    }
+    for (const child of Array.from(wrapper.childNodes)) {
+      if (child.nodeType === 3 && COPY_LABEL.test(child.textContent.trim())) {
+        child.remove();
+      }
+    }
+  }
 };
 
 export const unwrap = (node) => {
@@ -215,6 +270,7 @@ export const cleanBody = (bodyElement, baseUrl) => {
   for (const node of Array.from(clone.querySelectorAll(NOISE_SELECTORS.join(",")))) {
     node.remove();
   }
+  removeCodeBlockUi(clone);
   for (const wrapper of Array.from(clone.querySelectorAll("div.markdown-heading"))) {
     unwrap(wrapper);
   }
