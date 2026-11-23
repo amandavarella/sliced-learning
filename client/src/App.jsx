@@ -12,6 +12,7 @@ import {
   ChevronIcon,
   ClockIcon,
   CopyIcon,
+  ExternalLinkIcon,
   FolderIcon,
   LinkIcon,
   LogoMark,
@@ -20,8 +21,11 @@ import {
   VideoIcon,
 } from "./components/Icons.jsx";
 import Confetti from "./components/Confetti.jsx";
+import Library from "./components/Library.jsx";
 import ReaderSettings from "./components/ReaderSettings.jsx";
 import { useReaderSettings } from "./hooks/useReaderSettings.js";
+import { useTrainingSource } from "./trainingSource/index.js";
+import { formatShortDateTime } from "./utils/formatDate.js";
 import "./App.css";
 
 const DEFAULT_TITLE = "Sliced Learning";
@@ -78,14 +82,6 @@ const normalizeCompleted = (segments = [], completed = []) => {
   return segments.map((_, index) => Boolean(completed[index]));
 };
 
-// The segment param only marks earlier segments done, so a finished
-// training also carries done=1 to keep the last segment completed
-const DONE_PARAM = "done";
-
-const isTrainingFinished = (completed = []) => {
-  return completed.length > 0 && completed.every(Boolean);
-};
-
 const segmentDurationMinutes = (segment, fallbackMinutes) => {
   const estimated = Number(segment?.estimatedMinutes);
   if (Number.isFinite(estimated) && estimated >= 0) {
@@ -122,6 +118,8 @@ const arraysEqual = (left = [], right = []) => {
 };
 
 function App() {
+  const trainingSource = useTrainingSource();
+  const { capabilities } = trainingSource;
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -131,6 +129,7 @@ function App() {
   const [copyStatus, setCopyStatus] = useState("");
   const [segmentsOpen, setSegmentsOpen] = useState(false);
   const [confettiBurst, setConfettiBurst] = useState(0);
+  const [captureChoiceBusy, setCaptureChoiceBusy] = useState(false);
   const [readerSettings, updateReaderSettings] = useReaderSettings();
   const hydratingRef = useRef(false);
   const lastPersistRef = useRef(null);
@@ -196,20 +195,7 @@ function App() {
       setError("");
       setLoading(true);
       const trimmedUrl = rawUrl.trim();
-      const response = await fetch("/api/process", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ url: trimmedUrl }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json();
-        throw new Error(payload.error || "Unexpected error");
-      }
-
-      const payload = await response.json();
+      const payload = await trainingSource.process(trimmedUrl);
       hydrateTraining(payload, trimmedUrl);
     } catch (requestError) {
       setTrainingState(defaultState);
@@ -335,6 +321,38 @@ function App() {
     setSegmentsOpen(false);
   };
 
+  // A newer capture of this page is waiting (extension): keep the saved
+  // training and its progress, or slice the new capture and start over
+  const handleKeepSaved = async () => {
+    setCaptureChoiceBusy(true);
+    try {
+      await trainingSource.keepSavedTraining(training);
+      setTrainingState((previous) =>
+        previous.training
+          ? { ...previous, training: { ...previous.training, pendingCapture: null } }
+          : previous,
+      );
+    } catch (keepError) {
+      setError(keepError.message || "Unable to keep the saved training.");
+    } finally {
+      setCaptureChoiceBusy(false);
+    }
+  };
+
+  const handleReslice = async () => {
+    setCaptureChoiceBusy(true);
+    try {
+      setError("");
+      const payload = await trainingSource.resliceTraining(training);
+      setSegmentsOpen(false);
+      hydrateTraining(payload);
+    } catch (resliceError) {
+      setError(resliceError.message || "Unable to re-slice the page.");
+    } finally {
+      setCaptureChoiceBusy(false);
+    }
+  };
+
   // Keyboard navigation: arrow keys move between segments
   useEffect(() => {
     if (!training) {
@@ -389,156 +407,34 @@ function App() {
     }
   }, [training, activeIndex]);
 
+  // Open the training the source asks for on mount (for the web source, a
+  // shared ?source=&segment= link or an old ?share= link)
   useEffect(() => {
-    if (typeof window === "undefined") {
+    const request = trainingSource.readInitialRequest?.();
+    if (!request) {
       return;
     }
 
-    // Parse URL parameters - support both query and hash forms
-    const parseUrlParams = () => {
-      if (window.location.hash.includes("?")) {
-        return new URLSearchParams(window.location.hash.split("?")[1]);
+    const loadInitialTraining = async () => {
+      try {
+        setError("");
+        setLoading(true);
+        const payload = await trainingSource.load(request);
+        hydrateTraining(payload, request.source);
+      } catch (loadError) {
+        setTrainingState(defaultState);
+        setError(loadError.message || "Unable to load the training.");
+      } finally {
+        setLoading(false);
       }
-      return new URLSearchParams(window.location.search);
     };
 
-    const params = parseUrlParams();
-
-    // NEW FORMAT: source and segment parameters (deployment-agnostic)
-    const source = params.get("source");
-    const segmentParam = params.get("segment");
-    const finishedParam = params.get(DONE_PARAM) === "1";
-
-    // OLD FORMAT: share ID for backward compatibility
-    const shareId = params.get("share");
-
-    // Backward compatibility: migrate old share= format to new format
-    if (shareId && source) {
-      const migrateOldShareUrl = async () => {
-        try {
-          setError("");
-          setLoading(true);
-          const response = await fetch(
-            `/api/training/${shareId}?source=${encodeURIComponent(source)}`,
-          );
-
-          if (!response.ok) {
-            const payload = await response.json().catch(() => ({}));
-            throw new Error(payload.error || "Unable to load the shared training.");
-          }
-
-          const payload = await response.json();
-
-          // Extract current segment from the loaded data
-          const currentSegment = payload.progress?.activeIndex ?? 0;
-
-          // Redirect to new format
-          const nextUrl = new URL(window.location.href);
-          nextUrl.searchParams.delete("share");
-          nextUrl.searchParams.set("source", source);
-          nextUrl.searchParams.set("segment", String(currentSegment));
-          window.history.replaceState({}, "", nextUrl.toString());
-
-          hydrateTraining(payload, source);
-        } catch (shareError) {
-          setTrainingState(defaultState);
-          setError(shareError.message || "Unable to load the shared training.");
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      migrateOldShareUrl();
-      return;
-    }
-
-    // NEW FORMAT: Process source and jump to segment
-    if (source) {
-      const processSharedContent = async () => {
-        try {
-          setError("");
-          setLoading(true);
-          const trimmedSource = source.trim();
-          const response = await fetch("/api/process", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ url: trimmedSource }),
-          });
-
-          if (!response.ok) {
-            const payload = await response.json();
-            throw new Error(payload.error || "Unexpected error");
-          }
-
-          const payload = await response.json();
-
-          // Parse and validate segment parameter
-          const requestedSegment = segmentParam ? Math.max(0, Number(segmentParam) || 0) : 0;
-          const totalSegments = payload.segments?.length || 0;
-          const validSegment = Math.min(requestedSegment, Math.max(0, totalSegments - 1));
-
-          // When a segment parameter is provided, mark all previous segments as completed
-          const existingCompleted = normalizeCompleted(
-            payload.segments || [],
-            payload.progress?.completed,
-          );
-          const completedWithProgress = existingCompleted.map((isCompleted, index) => {
-            // Mark all segments before the requested segment as completed
-            return finishedParam || index < validSegment ? true : isCompleted;
-          });
-
-          // Override the default activeIndex with the requested segment
-          const modifiedPayload = {
-            ...payload,
-            progress: {
-              ...payload.progress,
-              completed: completedWithProgress,
-              activeIndex: validSegment,
-            },
-          };
-
-          hydrateTraining(modifiedPayload, trimmedSource);
-        } catch (processError) {
-          setTrainingState(defaultState);
-          setError(processError.message || "Unable to process the URL.");
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      processSharedContent();
-    }
-  }, [hydrateTraining]);
+    loadInitialTraining();
+  }, [hydrateTraining, trainingSource]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const nextUrl = new URL(window.location.href);
-
-    // Use new format: source and segment only (no shareId)
-    if (training?.sourceUrl) {
-      nextUrl.searchParams.set("source", training.sourceUrl);
-      nextUrl.searchParams.set("segment", String(activeIndex));
-      if (isTrainingFinished(completed)) {
-        nextUrl.searchParams.set(DONE_PARAM, "1");
-      } else {
-        nextUrl.searchParams.delete(DONE_PARAM);
-      }
-      // Clean up old format params
-      nextUrl.searchParams.delete("share");
-    } else {
-      nextUrl.searchParams.delete("share");
-      nextUrl.searchParams.delete("source");
-      nextUrl.searchParams.delete("segment");
-      nextUrl.searchParams.delete(DONE_PARAM);
-    }
-
-    window.history.replaceState({}, "", nextUrl.toString());
-  }, [training, activeIndex, completed]);
+    trainingSource.syncLocation?.(training, { activeIndex, completed });
+  }, [trainingSource, training, activeIndex, completed]);
 
   // Update document title and meta tags when training is loaded
   useEffect(() => {
@@ -579,10 +475,10 @@ function App() {
       updateMetaTag("og:description", description);
 
       // Set Open Graph URL
-      if (training.sourceUrl) {
-        const shareUrl = typeof window !== "undefined" 
-          ? `${window.location.origin}${window.location.pathname}?source=${encodeURIComponent(training.sourceUrl)}&segment=${activeIndex}`
-          : training.sourceUrl;
+      if (training.sourceUrl && capabilities.shareLinks) {
+        const shareUrl =
+          trainingSource.buildShareLink?.(training, { activeIndex }) ||
+          training.sourceUrl;
         updateMetaTag("og:url", shareUrl);
       }
 
@@ -597,12 +493,13 @@ function App() {
       // Reset to default title when no training is loaded
       document.title = DEFAULT_TITLE;
     }
-  }, [training, activeIndex]);
+  }, [training, activeIndex, capabilities, trainingSource]);
 
   useEffect(() => {
-    // Keep persistence logic only if shareId exists (backward compatibility)
-    // New format doesn't require server-side persistence - progress is in URL
-    if (!training?.shareId || !training?.sourceUrl) {
+    // The source decides whether and where progress is stored. The web source
+    // only saves trainings the server knows by shareId; the web app also keeps
+    // progress in the URL.
+    if (!training) {
       lastPersistRef.current = null;
       return;
     }
@@ -636,48 +533,21 @@ function App() {
           activeIndex,
         };
 
-        await fetch(
-          `/api/training/${training.shareId}/progress?source=${encodeURIComponent(training.sourceUrl)}`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              completed,
-              activeIndex,
-            }),
-          },
-        );
+        await trainingSource.saveProgress(training, { completed, activeIndex });
       } catch (persistError) {
         console.error("Unable to save progress", persistError);
       }
     };
 
     persist();
-  }, [activeIndex, completed, training]);
+  }, [activeIndex, completed, training, trainingSource]);
 
   const shareLink = useMemo(() => {
-    if (!training?.sourceUrl) {
+    if (!capabilities.shareLinks || !trainingSource.buildShareLink) {
       return "";
     }
-
-    if (typeof window === "undefined") {
-      return "";
-    }
-
-    // Build deployment-agnostic share link with source and segment only
-    const base = `${window.location.origin}${window.location.pathname}`;
-    const params = new URLSearchParams({
-      source: training.sourceUrl,
-      segment: String(activeIndex),
-    });
-    if (isTrainingFinished(completed)) {
-      params.set(DONE_PARAM, "1");
-    }
-
-    return `${base}?${params.toString()}`;
-  }, [training, activeIndex, completed]);
+    return trainingSource.buildShareLink(training, { activeIndex, completed });
+  }, [capabilities, trainingSource, training, activeIndex, completed]);
 
   useEffect(() => {
     if (!copyStatus) {
@@ -721,6 +591,9 @@ function App() {
     copyLink(training?.sourceUrl, "Original link copied");
   }, [copyLink, training]);
 
+  const originalUrl =
+    capabilities.openOriginal && training?.sourceUrl ? training.sourceUrl : "";
+
   const totalSegments = training?.segments.length ?? 0;
   const completedCount = completed.filter(Boolean).length;
   const allDone = totalSegments > 0 && completedCount === totalSegments;
@@ -756,7 +629,7 @@ function App() {
     return Math.round(total);
   }, [training, activeIndex, completed]);
 
-  const urlForm = (
+  const urlForm = capabilities.urlInput ? (
     <form className="input-form" onSubmit={handleSubmit}>
       <label htmlFor="url-input">
         Paste an article, YouTube, or Google Drive folder link
@@ -802,13 +675,39 @@ function App() {
         </button>
       </div>
     </form>
-  );
+  ) : null;
 
   const errorMessage = error ? (
     <p className="error-message" role="alert">
       {error}
     </p>
   ) : null;
+
+  if (!training && capabilities.library) {
+    return (
+      <div className="app-shell is-landing">
+        <header className="topbar">
+          <button
+            type="button"
+            className="brand brand-button"
+            onClick={handleReset}
+            aria-label="Sliced Learning library"
+          >
+            <LogoMark />
+            <span>Sliced Learning</span>
+          </button>
+          <ReaderSettings
+            settings={readerSettings}
+            onChange={updateReaderSettings}
+            showTypography={false}
+          />
+        </header>
+        <main className="landing library">
+          <Library error={error} loading={loading} />
+        </main>
+      </div>
+    );
+  }
 
   if (!training) {
     return (
@@ -843,10 +742,12 @@ function App() {
               device.
             </p>
 
-            <div className="hero-form">
-              {urlForm}
-              {errorMessage}
-            </div>
+            {(urlForm || errorMessage) && (
+              <div className="hero-form">
+                {urlForm}
+                {errorMessage}
+              </div>
+            )}
 
             {loading ? (
               <div className="loading-card" role="status">
@@ -856,7 +757,7 @@ function App() {
                   <p>Long videos and folders can take a few seconds.</p>
                 </div>
               </div>
-            ) : (
+            ) : capabilities.examples ? (
               <div className="examples">
                 <span className="examples-label">Try one:</span>
                 {EXAMPLES.map((example) => (
@@ -871,7 +772,7 @@ function App() {
                   </button>
                 ))}
               </div>
-            )}
+            ) : null}
           </section>
 
           <section className="feature-grid" aria-label="Supported content">
@@ -928,6 +829,12 @@ function App() {
 
   const isLastSegment = activeIndex === totalSegments - 1;
   const typeLabel = getContentTypeLabel(training.type);
+  const description =
+    trainingSource.describeTraining?.(training) || getTrainingDescription(training);
+  const trainingNotes = trainingSource.getTrainingNotes?.(training) ?? [];
+  const isWide = Boolean(trainingSource.getLayout?.(training)?.wide);
+  const pendingCapture = training.pendingCapture;
+  const savedAt = formatShortDateTime(training.capturedAt);
 
   return (
     <div className="app-shell is-learning">
@@ -945,23 +852,37 @@ function App() {
           </button>
           <div className="sidebar-actions">
             <ReaderSettings settings={readerSettings} onChange={updateReaderSettings} />
-            <button
-              type="button"
-              className="new-button"
-              onClick={handleReset}
-              aria-label="Start a new training"
-            >
-              <PlusIcon />
-              <span>New</span>
-            </button>
+            {capabilities.urlInput && (
+              <button
+                type="button"
+                className="new-button"
+                onClick={handleReset}
+                aria-label="Start a new training"
+              >
+                <PlusIcon />
+                <span>New</span>
+              </button>
+            )}
           </div>
         </div>
-        <div className="sidebar-form">{urlForm}</div>
+        {urlForm && <div className="sidebar-form">{urlForm}</div>}
         {errorMessage}
         <div className="progress-panel">
           <div className="progress-header">
             <h2>Your progress</h2>
             <div className="progress-actions">
+              {originalUrl && (
+                <a
+                  className="copy-link-button"
+                  href={originalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Open original"
+                  title="Open original"
+                >
+                  <ExternalLinkIcon />
+                </a>
+              )}
               {shareLink && (
                 <button
                   type="button"
@@ -1045,13 +966,41 @@ function App() {
               );
             })}
           </ul>
-          <button className="reset-button" type="button" onClick={handleReset}>
-            Start over
-          </button>
+          {capabilities.urlInput && (
+            <button className="reset-button" type="button" onClick={handleReset}>
+              Start over
+            </button>
+          )}
         </div>
       </aside>
 
-      <main className="content">
+      <main className={isWide ? "content is-wide" : "content"}>
+        {pendingCapture && (
+          <section className="completion-banner capture-banner" role="status">
+            <p className="capture-banner-text">
+              Saved training from {savedAt || "an earlier capture"}. Continue, or
+              Re-slice from the page you just captured.
+            </p>
+            <div className="completion-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={handleKeepSaved}
+                disabled={captureChoiceBusy}
+              >
+                Continue
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleReslice}
+                disabled={captureChoiceBusy}
+              >
+                Re-slice
+              </button>
+            </div>
+          </section>
+        )}
         {allDone && (
           <section className="completion-banner" role="status">
             <span className="completion-icon">
@@ -1061,12 +1010,14 @@ function App() {
               <strong>You finished every section!</strong>
               <p>You are ready to slice something new.</p>
             </div>
-            <div className="completion-actions">
-              <button type="button" className="primary-button" onClick={handleReset}>
-                <PlusIcon />
-                New training
-              </button>
-            </div>
+            {capabilities.urlInput && (
+              <div className="completion-actions">
+                <button type="button" className="primary-button" onClick={handleReset}>
+                  <PlusIcon />
+                  New training
+                </button>
+              </div>
+            )}
           </section>
         )}
         <div className="segment-view" ref={segmentViewRef}>
@@ -1079,7 +1030,16 @@ function App() {
                 </span>
               )}
               <h2>{training.title}</h2>
-              <p className="segment-meta">{getTrainingDescription(training)}</p>
+              <p className="segment-meta">{description}</p>
+              {trainingNotes.map((note) => (
+                <p
+                  key={note.id}
+                  className="segment-meta segment-note"
+                  title={note.detail || undefined}
+                >
+                  {note.text}
+                </p>
+              ))}
             </div>
             <span className="segment-counter">
               Segment {activeIndex + 1} / {totalSegments}

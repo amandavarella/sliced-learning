@@ -1,0 +1,253 @@
+/* GitHub syntax colours for code captured from GitHub.
+
+   GitHub highlights fenced code server side: each token is a span with a
+   Prettylights class (pl-k, pl-s, pl-c...) inside div.highlight > pre, and
+   cleanBody and the shared sanitiser keep those classes. This sheet gives
+   them GitHub's colours.
+
+   Colour values: the --color-prettylights-syntax-* tokens of the github.com
+   "light" and "dark" default themes in Primer primitives 11.10.0
+   (@primer/primitives, dist/css/functional/themes/light.css and dark.css,
+   https://github.com/primer/primitives), with var() references resolved to
+   their hex values. Copyright (c) 2018 GitHub Inc., MIT licence.
+
+   Class to token mapping: copied from the .markdown-body .pl-* rules of
+   github-markdown-css 5.9.0 (https://github.com/sindresorhus/github-markdown-css),
+   which mirrors GitHub's own Markdown stylesheet. Copyright (c) Sindre Sorhus,
+   MIT licence.
+
+   Everything is scoped to .article-segment-content, the reader's article
+   container, so none of it reaches the reader's own UI. Dark values follow the
+   same switch as App.css: the OS preference when no data-theme is set on
+   <html>, or data-theme="dark". Light and sepia use the light values. */
+
+.article-segment-content {
+  --color-prettylights-syntax-brackethighlighter-angle: #59636e;
+  --color-prettylights-syntax-brackethighlighter-unmatched: #82071e;
+  --color-prettylights-syntax-carriage-return-bg: #cf222e;
+  --color-prettylights-syntax-carriage-return-text: #f6f8fa;
+  --color-prettylights-syntax-comment: #59636e;
+  --color-prettylights-syntax-constant: #0550ae;
+  --color-prettylights-syntax-constant-other-reference-link: #0a3069;
+  --color-prettylights-syntax-entity: #6639ba;
+  --color-prettylights-syntax-entity-tag: #0550ae;
+  --color-prettylights-syntax-invalid-illegal-bg: #ffebe9;
+  --color-prettylights-syntax-invalid-illegal-text: #d1242f;
+  --color-prettylights-syntax-keyword: #cf222e;
+  --color-prettylights-syntax-markup-bold: #1f2328;
+  --color-prettylights-syntax-markup-changed-bg: #ffd8b5;
+  --color-prettylights-syntax-markup-changed-text: #953800;
+  --color-prettylights-syntax-markup-deleted-bg: #ffebe9;
+  --color-prettylights-syntax-markup-deleted-text: #82071e;
+  --color-prettylights-syntax-markup-heading: #0550ae;
+  --color-prettylights-syntax-markup-ignored-bg: #0550ae;
+  --color-prettylights-syntax-markup-ignored-text: #d1d9e0;
+  --color-prettylights-syntax-markup-inserted-bg: #dafbe1;
+  --color-prettylights-syntax-markup-inserted-text: #116329;
+  --color-prettylights-syntax-markup-italic: #1f2328;
+  --color-prettylights-syntax-markup-list: #3b2300;
+  --color-prettylights-syntax-meta-diff-range: #8250df;
+  --color-prettylights-syntax-storage-modifier-import: #1f2328;
+  --color-prettylights-syntax-string: #0a3069;
+  --color-prettylights-syntax-string-regexp: #116329;
+  --color-prettylights-syntax-sublimelinter-gutter-mark: #818b98;
+  --color-prettylights-syntax-variable: #953800;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .article-segment-content {
+    --color-prettylights-syntax-brackethighlighter-angle: #9198a1;
+    --color-prettylights-syntax-brackethighlighter-unmatched: #f85149;
+    --color-prettylights-syntax-carriage-return-bg: #b62324;
+    --color-prettylights-syntax-carriage-return-text: #f0f6fc;
+    --color-prettylights-syntax-comment: #9198a1;
+    --color-prettylights-syntax-constant: #79c0ff;
+    --color-prettylights-syntax-constant-other-reference-link: #a5d6ff;
+    --color-prettylights-syntax-entity: #d2a8ff;
+    --color-prettylights-syntax-entity-tag: #7ee787;
+    --color-prettylights-syntax-invalid-illegal-bg: #f851491a;
+    --color-prettylights-syntax-invalid-illegal-text: #f85149;
+    --color-prettylights-syntax-keyword: #ff7b72;
+    --color-prettylights-syntax-markup-bold: #f0f6fc;
+    --color-prettylights-syntax-markup-changed-bg: #5a1e02;
+    --color-prettylights-syntax-markup-changed-text: #ffdfb6;
+    --color-prettylights-syntax-markup-deleted-bg: #67060c;
+    --color-prettylights-syntax-markup-deleted-text: #ffdcd7;
+    --color-prettylights-syntax-markup-heading: #1f6feb;
+    --color-prettylights-syntax-markup-ignored-bg: #1158c7;
+    --color-prettylights-syntax-markup-ignored-text: #f0f6fc;
+    --color-prettylights-syntax-markup-inserted-bg: #033a16;
+    --color-prettylights-syntax-markup-inserted-text: #aff5b4;
+    --color-prettylights-syntax-markup-italic: #f0f6fc;
+    --color-prettylights-syntax-markup-list: #f2cc60;
+    --color-prettylights-syntax-meta-diff-range: #d2a8ff;
+    --color-prettylights-syntax-storage-modifier-import: #f0f6fc;
+    --color-prettylights-syntax-string: #a5d6ff;
+    --color-prettylights-syntax-string-regexp: #7ee787;
+    --color-prettylights-syntax-sublimelinter-gutter-mark: #3d444d;
+    --color-prettylights-syntax-variable: #ffa657;
+  }
+}
+
+:root[data-theme="dark"] .article-segment-content {
+  --color-prettylights-syntax-brackethighlighter-angle: #9198a1;
+  --color-prettylights-syntax-brackethighlighter-unmatched: #f85149;
+  --color-prettylights-syntax-carriage-return-bg: #b62324;
+  --color-prettylights-syntax-carriage-return-text: #f0f6fc;
+  --color-prettylights-syntax-comment: #9198a1;
+  --color-prettylights-syntax-constant: #79c0ff;
+  --color-prettylights-syntax-constant-other-reference-link: #a5d6ff;
+  --color-prettylights-syntax-entity: #d2a8ff;
+  --color-prettylights-syntax-entity-tag: #7ee787;
+  --color-prettylights-syntax-invalid-illegal-bg: #f851491a;
+  --color-prettylights-syntax-invalid-illegal-text: #f85149;
+  --color-prettylights-syntax-keyword: #ff7b72;
+  --color-prettylights-syntax-markup-bold: #f0f6fc;
+  --color-prettylights-syntax-markup-changed-bg: #5a1e02;
+  --color-prettylights-syntax-markup-changed-text: #ffdfb6;
+  --color-prettylights-syntax-markup-deleted-bg: #67060c;
+  --color-prettylights-syntax-markup-deleted-text: #ffdcd7;
+  --color-prettylights-syntax-markup-heading: #1f6feb;
+  --color-prettylights-syntax-markup-ignored-bg: #1158c7;
+  --color-prettylights-syntax-markup-ignored-text: #f0f6fc;
+  --color-prettylights-syntax-markup-inserted-bg: #033a16;
+  --color-prettylights-syntax-markup-inserted-text: #aff5b4;
+  --color-prettylights-syntax-markup-italic: #f0f6fc;
+  --color-prettylights-syntax-markup-list: #f2cc60;
+  --color-prettylights-syntax-meta-diff-range: #d2a8ff;
+  --color-prettylights-syntax-storage-modifier-import: #f0f6fc;
+  --color-prettylights-syntax-string: #a5d6ff;
+  --color-prettylights-syntax-string-regexp: #7ee787;
+  --color-prettylights-syntax-sublimelinter-gutter-mark: #3d444d;
+  --color-prettylights-syntax-variable: #ffa657;
+}
+
+/* Code blocks sit on the theme's muted surface with the theme's text colour,
+   as on GitHub (bgColor-muted and fgColor-default there), instead of the
+   always-dark block App.css draws for web articles. The Prettylights colours
+   are tuned for that kind of background in each theme. */
+:root .article-segment-content pre {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.article-segment-content .pl-c {
+  color: var(--color-prettylights-syntax-comment);
+}
+
+.article-segment-content .pl-c1,
+.article-segment-content .pl-s .pl-v {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+.article-segment-content .pl-e,
+.article-segment-content .pl-en {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+.article-segment-content .pl-smi,
+.article-segment-content .pl-s .pl-s1 {
+  color: var(--color-prettylights-syntax-storage-modifier-import);
+}
+
+.article-segment-content .pl-ent {
+  color: var(--color-prettylights-syntax-entity-tag);
+}
+
+.article-segment-content .pl-k {
+  color: var(--color-prettylights-syntax-keyword);
+}
+
+.article-segment-content .pl-s,
+.article-segment-content .pl-pds,
+.article-segment-content .pl-s .pl-pse .pl-s1,
+.article-segment-content .pl-sr,
+.article-segment-content .pl-sr .pl-cce,
+.article-segment-content .pl-sr .pl-sre,
+.article-segment-content .pl-sr .pl-sra {
+  color: var(--color-prettylights-syntax-string);
+}
+
+.article-segment-content .pl-v,
+.article-segment-content .pl-smw {
+  color: var(--color-prettylights-syntax-variable);
+}
+
+.article-segment-content .pl-bu {
+  color: var(--color-prettylights-syntax-brackethighlighter-unmatched);
+}
+
+.article-segment-content .pl-ii {
+  color: var(--color-prettylights-syntax-invalid-illegal-text);
+  background-color: var(--color-prettylights-syntax-invalid-illegal-bg);
+}
+
+.article-segment-content .pl-c2 {
+  color: var(--color-prettylights-syntax-carriage-return-text);
+  background-color: var(--color-prettylights-syntax-carriage-return-bg);
+}
+
+.article-segment-content .pl-sr .pl-cce {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-string-regexp);
+}
+
+.article-segment-content .pl-ml {
+  color: var(--color-prettylights-syntax-markup-list);
+}
+
+.article-segment-content .pl-mh,
+.article-segment-content .pl-mh .pl-en,
+.article-segment-content .pl-ms {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-markup-heading);
+}
+
+.article-segment-content .pl-mi {
+  font-style: italic;
+  color: var(--color-prettylights-syntax-markup-italic);
+}
+
+.article-segment-content .pl-mb {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-markup-bold);
+}
+
+.article-segment-content .pl-md {
+  color: var(--color-prettylights-syntax-markup-deleted-text);
+  background-color: var(--color-prettylights-syntax-markup-deleted-bg);
+}
+
+.article-segment-content .pl-mi1 {
+  color: var(--color-prettylights-syntax-markup-inserted-text);
+  background-color: var(--color-prettylights-syntax-markup-inserted-bg);
+}
+
+.article-segment-content .pl-mc {
+  color: var(--color-prettylights-syntax-markup-changed-text);
+  background-color: var(--color-prettylights-syntax-markup-changed-bg);
+}
+
+.article-segment-content .pl-mi2 {
+  color: var(--color-prettylights-syntax-markup-ignored-text);
+  background-color: var(--color-prettylights-syntax-markup-ignored-bg);
+}
+
+.article-segment-content .pl-mdr {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-meta-diff-range);
+}
+
+.article-segment-content .pl-ba {
+  color: var(--color-prettylights-syntax-brackethighlighter-angle);
+}
+
+.article-segment-content .pl-sg {
+  color: var(--color-prettylights-syntax-sublimelinter-gutter-mark);
+}
+
+.article-segment-content .pl-corl {
+  text-decoration: underline;
+  color: var(--color-prettylights-syntax-constant-other-reference-link);
+}

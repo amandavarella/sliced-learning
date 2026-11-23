@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Sliced Learning",
+  "version": "0.1.0",
+  "description": "Slice GitHub and Confluence pages into short training segments, kept in this browser.",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "scripting", "storage", "unlimitedStorage"],
+  "host_permissions": ["https://*.githubusercontent.com/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Slice this page",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

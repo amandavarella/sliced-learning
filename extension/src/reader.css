@@ -1,0 +1,8 @@
+/* Chrome gives extension pages a default stylesheet with
+   body { font-family: system-ui, sans-serif; font-size: 75%; }.
+   That overrides the Inter font and 16px base the client sets on :root, so
+   hand both back to the root, as on the web app. */
+body {
+  font-family: inherit;
+  font-size: inherit;
+}

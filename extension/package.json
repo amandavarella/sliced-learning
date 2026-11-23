@@ -1,0 +1,28 @@
+{
+  "name": "sliced-learning-extension",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Chrome extension that slices GitHub and Confluence pages into trainings inside the browser",
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:reader && npm run build:background && npm run build:capture && node scripts/copy-static.mjs",
+    "build:reader": "vite build -c vite.reader.config.js",
+    "build:background": "vite build -c vite.scripts.config.js --mode background",
+    "build:capture": "vite build -c vite.scripts.config.js --mode capture",
+    "icons": "node scripts/make-icons.mjs",
+    "smoke": "node scripts/e2e-smoke.mjs",
+    "e2e:github": "node scripts/e2e-github.mjs",
+    "e2e:confluence": "node scripts/e2e-confluence-mock.mjs",
+    "test": "node --test src/"
+  },
+  "dependencies": {
+    "dompurify": "^3.3.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^27.0.0",
+    "vite": "^7.1.2"
+  }
+}

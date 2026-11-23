@@ -1,0 +1,23 @@
+<div class="comment-body markdown-body js-comment-body soft-wrap user-select-contain d-block">
+      <h2 dir="auto">What this solves</h2>
+<p dir="auto">The error overlay currently has no way to copy the full error details as<br>
+plain text. This adds a "Copy Error" button that copies the plugin name,<br>
+message, file location, code frame, and stack trace to the clipboard in<br>
+one click.</p>
+<p dir="auto"><span class="issue-keyword tooltipped tooltipped-se" aria-label="This pull request closes issue #22980.">Fixes</span> <a class="issue-link js-issue-link" data-error-text="Failed to load title" data-id="4921310860" data-permission-text="Title is private" data-url="https://github.com/vitejs/vite/issues/22980" data-hovercard-type="issue" data-hovercard-url="/vitejs/vite/issues/22980/hovercard" href="https://github.com/vitejs/vite/issues/22980" aria-keyshortcuts="Alt+ArrowUp">#22980</a></p>
+<h2 dir="auto">Alternatives explored</h2>
+<p dir="auto">Manual text selection works but is unreliable across the overlay's<br>
+scrollable stack trace section, and requires multiple separate selections<br>
+to capture everything (plugin, message, file, frame, stack).</p>
+<h2 dir="auto">Attention needed</h2>
+<ul dir="auto">
+<li>No automated test included yet — the overlay renders inside a shadow<br>
+DOM and I wasn't confident about the right pattern for asserting<br>
+clipboard content in the existing Playwright test setup. Happy to add<br>
+one if a maintainer can point me to a similar existing test, or if<br>
+this needs to land before merge.</li>
+<li>Button styling reuses existing CSS custom properties (--dim,<br>
+--window-color, --monospace) to match the current theme.</li>
+</ul>
+<p dir="auto">Thank you for maintaining Vite!</p>
+    </div>

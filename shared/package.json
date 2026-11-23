@@ -1,0 +1,22 @@
+{
+  "name": "@sliced-learning/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Slicing core shared by the server and the Chrome extension: sanitise, chunk, and build the training payload",
+  "type": "module",
+  "exports": {
+    "./segmentation.js": "./segmentation.js",
+    "./sanitize.js": "./sanitize.js",
+    "./slice.js": "./slice.js",
+    "./constants.js": "./constants.js",
+    "./dom/node.js": "./dom/node.js",
+    "./dom/browser.js": "./dom/browser.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "dompurify": "^3.3.0",
+    "jsdom": "^27.0.0"
+  }
+}

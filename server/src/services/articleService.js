@@ -1,12 +1,14 @@
 import axios from "axios";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import { chunkByWordGoal, chunkHtmlContent } from "../utils/segmentation.js";
-import { sanitizeHtml } from "../utils/sanitize.js";
-
-const WORDS_PER_MINUTE = 200;
-const SEGMENT_MINUTES = 2;
-const MAX_WORDS_PER_SEGMENT = WORDS_PER_MINUTE * SEGMENT_MINUTES;
+import {
+  chunkByWordGoal,
+  chunkHtmlContent,
+  sanitizeHtml,
+  MAX_WORDS_PER_SEGMENT,
+  SEGMENT_MINUTES,
+  WORDS_PER_MINUTE,
+} from "../utils/slicing.js";
 
 const fetchHtml = async (url) => {
   const { data } = await axios.get(url, {
