@@ -132,6 +132,23 @@
   border: 1px solid var(--border);
 }
 
+/* The copy button (App.css) on that muted block: the theme surface, border
+   and muted text, as GitHub draws its button on bgColor-muted */
+:root .article-segment-content .code-copy-button {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+:root .article-segment-content .code-copy-button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+:root .article-segment-content .code-copy-button.is-copied {
+  color: var(--success);
+}
+
 .article-segment-content .pl-c {
   color: var(--color-prettylights-syntax-comment);
 }

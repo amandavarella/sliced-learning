@@ -24,6 +24,7 @@ import Confetti from "./components/Confetti.jsx";
 import Library from "./components/Library.jsx";
 import MarginHandles from "./components/MarginHandles.jsx";
 import ReaderSettings from "./components/ReaderSettings.jsx";
+import { useCodeCopyButtons } from "./hooks/useCodeCopyButtons.js";
 import { useMermaidDiagrams } from "./hooks/useMermaidDiagrams.js";
 import { useReaderSettings } from "./hooks/useReaderSettings.js";
 import { useReadingMargins } from "./hooks/useReadingMargins.js";
@@ -391,6 +392,8 @@ function App() {
 
   // Draw Mermaid diagrams once the segment HTML is in the DOM
   useMermaidDiagrams(segmentViewRef, activeSegment);
+  // and give every other code block a copy button
+  useCodeCopyButtons(segmentViewRef, activeSegment);
 
   // Bring the new segment into view when the learner moves between segments
   useEffect(() => {

@@ -136,3 +136,81 @@ test("GitHub syntax highlighting survives cleaning, sanitising and slicing", () 
     assert.ok(document.querySelector(`.highlight pre span.${name}`), `span.${name} lost`);
   }
 });
+
+// Cleans, sanitises and slices a body the way the extension does, and
+// returns the reader's view of it: what a reader sees as text, and the HTML
+const sliceForReader = (body, url) => {
+  const window = new JSDOM("").window;
+  const payload = sliceHtml({
+    html: body.outerHTML,
+    title: "Page",
+    sourceUrl: url,
+    dom: createBrowserDom(window.DOMParser),
+    sanitize: createSanitizer(createDOMPurify(window)),
+  });
+  const html = payload.segments.map((segment) => segment.html).join("");
+  const container = window.document.createElement("div");
+  container.innerHTML = html;
+  return { html, text: container.textContent, container };
+};
+
+for (const fixture of ["blob-readme.html", "blob-mermaid.html", "issue.html"]) {
+  test(`no "Copy code to clipboard" text reaches the reader from ${fixture}`, () => {
+    const page = byFixture(fixture);
+    const { original, body } = cleaned(page);
+    assert.ok(original.outerHTML.includes("Copy code to clipboard"), "fixture lost its copy buttons");
+
+    const { html, text, container } = sliceForReader(body, page.url);
+    assert.ok(container.querySelectorAll("pre").length > 0);
+    assert.ok(!text.includes("Copy code to clipboard"));
+    assert.ok(!html.includes("Copy code to clipboard"));
+  });
+}
+
+test("cleanBody removes copy button labels GitHub renders as text next to a code block", () => {
+  // [Unverified] markup: none of the fixtures or the signed-out live pages
+  // show the label as text, but a signed-in private README did. These are the
+  // shapes that would do it: a Primer tooltip element, a role="tooltip" span,
+  // screen reader text in a button, popover feedback, and a bare label
+  const url = "https://github.com/a/b/blob/main/README.md";
+  const variants = [
+    `<clipboard-copy id="c1"></clipboard-copy><tool-tip for="c1" popover="manual">Copy code to clipboard</tool-tip>`,
+    `<span role="tooltip" aria-hidden="true">Copy code to clipboard</span>`,
+    `<button type="button" class="Button"><svg class="octicon-copy"></svg><span class="sr-only">Copy code to clipboard</span></button>`,
+    `<div class="snippet-copy"><span>Copy code to clipboard</span></div>`,
+    `<span aria-live="polite">Copied!</span>`,
+    `Copy code to clipboard`,
+  ];
+  for (const variant of variants) {
+    const document = makeDocument({
+      url,
+      body: `<article class="markdown-body"><p>Install it:</p><div class="highlight highlight-source-shell"><pre>npm install copy-code</pre>${variant}</div><p>Copy code to clipboard is a phrase in prose.</p></article>`,
+    });
+    const body = cleanBody(document.querySelector("article"), url);
+    const { text, container } = sliceForReader(body, url);
+
+    assert.equal(container.querySelector("pre").textContent, "npm install copy-code", variant);
+    assert.equal(text.match(/Copy code to clipboard/g)?.length, 1, variant);
+    assert.ok(!text.includes("Copied"), variant);
+  }
+});
+
+test("cleanBody keeps a code block whose code is a copy label", () => {
+  const url = "https://github.com/a/b";
+  const document = makeDocument({
+    url,
+    body: `<article class="markdown-body"><div class="highlight"><pre><span class="pl-s">Copied!</span></pre></div></article>`,
+  });
+  const body = cleanBody(document.querySelector("article"), url);
+  assert.equal(body.querySelector("pre").textContent, "Copied!");
+});
+
+test("cleanBody leaves screen reader text alone outside a code block wrapper", () => {
+  const url = "https://github.com/a/b";
+  const document = makeDocument({
+    url,
+    body: `<article class="markdown-body"><ol><li><p>Run:</p><pre>make</pre><span class="sr-only">Step one</span></li></ol></article>`,
+  });
+  const body = cleanBody(document.querySelector("article"), url);
+  assert.ok(body.querySelector("li .sr-only"));
+});
