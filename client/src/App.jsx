@@ -23,6 +23,7 @@ import {
 import Confetti from "./components/Confetti.jsx";
 import Library from "./components/Library.jsx";
 import ReaderSettings from "./components/ReaderSettings.jsx";
+import { useMermaidDiagrams } from "./hooks/useMermaidDiagrams.js";
 import { useReaderSettings } from "./hooks/useReaderSettings.js";
 import { useTrainingSource } from "./trainingSource/index.js";
 import { formatShortDateTime } from "./utils/formatDate.js";
@@ -380,6 +381,9 @@ function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [training, handleNext, handlePrevious]);
+
+  // Draw Mermaid diagrams once the segment HTML is in the DOM
+  useMermaidDiagrams(segmentViewRef, activeSegment);
 
   // Bring the new segment into view when the learner moves between segments
   useEffect(() => {

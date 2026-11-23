@@ -13,10 +13,12 @@
     "smoke": "node scripts/e2e-smoke.mjs",
     "e2e:github": "node scripts/e2e-github.mjs",
     "e2e:confluence": "node scripts/e2e-confluence-mock.mjs",
+    "e2e:mermaid": "node scripts/e2e-mermaid.mjs",
     "test": "node --test src/"
   },
   "dependencies": {
     "dompurify": "^3.3.0",
+    "mermaid": "^12.3.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
