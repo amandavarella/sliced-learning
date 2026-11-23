@@ -21,7 +21,7 @@ The kind comes from the URL path, then each kind tries an ordered list of select
 
 Before the body leaves the page, `src/extractors/clean.js` removes GitHub UI (heading permalinks, copy buttons, diagram overlay toggles), turns task list checkboxes into ☑ and ☐ text, makes every `href`, `src` and `srcset` absolute, and swaps camo proxy URLs for the original image URL (`data-canonical-src`), keeping camo as a fallback.
 
-**Mermaid and other rendered diagrams.** GitHub draws diagrams inside a cross-origin iframe the extension cannot read. The reader shows the diagram source as a code block (`language-mermaid`) followed by a "Diagram rendered on GitHub" link to the original page. Diagrams are not rendered in the reader.
+**Mermaid and other rendered diagrams.** GitHub draws diagrams inside a cross-origin iframe the extension cannot read, so the capture keeps the diagram source as a code block (`language-mermaid`) followed by a "Diagram rendered on GitHub" link to the original page. The reader then draws each Mermaid block with the `mermaid` package, loaded as a separate chunk only when a segment has a diagram, and keeps the source in a collapsed "Diagram source" disclosure under the figure. A block Mermaid cannot parse stays as source, and other diagram types (GeoJSON, TopoJSON, STL) are shown as source only.
 
 ## Supported Confluence Cloud pages
 
@@ -167,6 +167,8 @@ Set `HEADED=1` to watch it and `SMOKE_URL` to capture another page.
 `scripts/e2e-github.mjs` (`npm run e2e:github`, same environment variables) captures one public page of each GitHub kind (blob, repo README, wiki, issue, PR) and checks the stored training's kind, title, segment count and, for the repo README and the issue, that images were inlined. `E2E_ONLY=issue,pr` runs a subset. Playwright cannot click the toolbar button, and a click driven from the service worker does not grant `activeTab`, so the script loads a temporary copy of `dist/` whose manifest adds host access to `https://github.com/*` on top of the manifest's own. The build in `dist/` is not changed.
 
 `scripts/e2e-confluence-mock.mjs` (`npm run e2e:confluence`, same environment variables) needs no network. It starts a local mock Confluence (rendered page, v2 page endpoint, v1 content search, attachment downloads, all but the page behind a mock session cookie) and routes `https://mock.atlassian.net/*` to it with Playwright. It captures three pages, one per route (`api-v2`, `api-v1`, `dom`), and checks kind, route, title, segment count, inlined images, the storage key and that no macro markup is left.
+
+`scripts/e2e-mermaid.mjs` (`npm run e2e:mermaid`, same environment variables) needs no network. Playwright answers the mermaid README URL with `fixtures/github/blob-mermaid.html` and aborts every other request. The script opens each segment with a Mermaid block and checks that the reader drew at least one `figure.mermaid-diagram svg`, left no `code.language-mermaid`, kept a source disclosure per figure, redrew the figures for the dark scheme, fits them in the normal and wide layouts, and logged no CSP or eval error. `SCREENSHOT_DIR=<dir>` keeps `mermaid-reader.png` and `mermaid-reader-dark.png`.
 
 ## Storage layout
 

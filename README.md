@@ -106,6 +106,7 @@ Run these in `extension/`:
 - `npm test`: extractor, cleaning and image inlining tests with `node --test` and jsdom, against saved GitHub and Confluence fixtures.
 - `npm run e2e:github`: captures one public page of each GitHub kind in Chromium with Playwright. Needs network access to github.com.
 - `npm run e2e:confluence`: captures pages from a local mock Confluence site in Chromium with Playwright. Needs no network.
+- `npm run e2e:mermaid`: captures the saved Mermaid README fixture and checks that the reader draws its diagrams. Needs no network.
 
 Playwright is not a dependency of the package; the browser tests need an existing install. See [extension/README.md](extension/README.md) for the full guide: supported page kinds, Confluence capture routes and macro handling, image limits, the storage layout, the smoke test and the source layout. The design, decisions and what is still unchecked by hand are in [docs/chrome-extension-plan.md](docs/chrome-extension-plan.md).
 
