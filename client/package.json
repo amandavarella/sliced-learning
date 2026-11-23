@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "e2e:margins": "node scripts/e2e-reader-margins.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

@@ -969,6 +969,89 @@ svg {
   max-width: none;
 }
 
+/* Reading margins: the reader dragged the card edges (MarginHandles). The
+   margins come from reader settings as custom properties on .content and
+   apply to wide and normal trainings alike; the text drops its reading
+   measure and reflows to the card. Without .has-margins nothing changes. */
+.content.has-margins :is(.segment-view, .completion-banner) {
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+  margin-left: var(--reading-margin-left, 0px);
+  margin-right: var(--reading-margin-right, 0px);
+}
+
+.content.has-margins :is(.article-segment-content, .drive-segment-content) {
+  max-width: none;
+}
+
+.segment-view {
+  position: relative;
+}
+
+.segment-view.is-resizing,
+.segment-view.is-resizing * {
+  transition: none !important;
+}
+
+body.is-resizing-margins {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: col-resize;
+}
+
+.margin-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  display: flex;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  border-radius: 999px;
+  outline: none;
+  z-index: 2;
+}
+
+.margin-handle.is-left {
+  left: -15px;
+}
+
+.margin-handle.is-right {
+  right: -15px;
+}
+
+/* The grip stays in view while the card scrolls past */
+.margin-handle-grip {
+  position: sticky;
+  top: calc(50vh - 28px);
+  width: 4px;
+  height: 56px;
+  margin-top: 2rem;
+  border-radius: 999px;
+  background: var(--border);
+  opacity: 0.35;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.margin-handle:hover .margin-handle-grip,
+.margin-handle:focus-visible .margin-handle-grip,
+.segment-view.is-resizing .margin-handle-grip {
+  opacity: 1;
+  background: var(--accent);
+}
+
+.margin-handle:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+@media (max-width: 719px) {
+  .margin-handle {
+    display: none;
+  }
+}
+
 .segment-header {
   display: flex;
   align-items: flex-start;
@@ -1565,6 +1648,29 @@ kbd {
   padding: 0;
   border: none;
   min-width: 0;
+}
+
+.reader-settings-reset {
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 0 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.reader-settings-reset:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.reader-settings-reset:disabled {
+  color: var(--text-muted);
+  opacity: 0.6;
+  cursor: default;
 }
 
 .reader-settings-group legend {

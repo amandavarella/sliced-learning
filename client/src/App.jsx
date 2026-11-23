@@ -22,9 +22,11 @@ import {
 } from "./components/Icons.jsx";
 import Confetti from "./components/Confetti.jsx";
 import Library from "./components/Library.jsx";
+import MarginHandles from "./components/MarginHandles.jsx";
 import ReaderSettings from "./components/ReaderSettings.jsx";
 import { useMermaidDiagrams } from "./hooks/useMermaidDiagrams.js";
 import { useReaderSettings } from "./hooks/useReaderSettings.js";
+import { useReadingMargins } from "./hooks/useReadingMargins.js";
 import { useTrainingSource } from "./trainingSource/index.js";
 import { formatShortDateTime } from "./utils/formatDate.js";
 import "./App.css";
@@ -132,6 +134,11 @@ function App() {
   const [confettiBurst, setConfettiBurst] = useState(0);
   const [captureChoiceBusy, setCaptureChoiceBusy] = useState(false);
   const [readerSettings, updateReaderSettings] = useReaderSettings();
+  const setReadingMargins = useCallback(
+    (margins) => updateReaderSettings({ margins }),
+    [updateReaderSettings],
+  );
+  const readingMargins = useReadingMargins(readerSettings.margins, setReadingMargins);
   const hydratingRef = useRef(false);
   const lastPersistRef = useRef(null);
   const segmentViewRef = useRef(null);
@@ -978,7 +985,13 @@ function App() {
         </div>
       </aside>
 
-      <main className={isWide ? "content is-wide" : "content"}>
+      <main
+        ref={readingMargins.contentRef}
+        className={["content", isWide && "is-wide", readingMargins.contentProps.className]
+          .filter(Boolean)
+          .join(" ")}
+        style={readingMargins.contentProps.style}
+      >
         {pendingCapture && (
           <section className="completion-banner capture-banner" role="status">
             <p className="capture-banner-text">
@@ -1024,7 +1037,11 @@ function App() {
             )}
           </section>
         )}
-        <div className="segment-view" ref={segmentViewRef}>
+        <div
+          className={readingMargins.dragging ? "segment-view is-resizing" : "segment-view"}
+          ref={segmentViewRef}
+        >
+          <MarginHandles margins={readingMargins} />
           <header className="segment-header">
             <div className="segment-heading">
               {typeLabel && (
