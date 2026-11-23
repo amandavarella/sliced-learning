@@ -73,15 +73,24 @@ test("fetchImageInWorker returns base64 for images within the cap", async (t) =>
   assert.equal((await fetchImageInWorker({ url: "http://x.test/a.png", maxBytes: 100 })).error, "bad-url");
 });
 
-test("withPageCredentials sends cookies to same-origin images only", () => {
+test("withPageCredentials always uses same-origin credentials", () => {
   const origin = "https://mock.atlassian.net";
+  // Same-origin URLs still get the session cookie under "same-origin"
   assert.equal(
     withPageCredentials("https://mock.atlassian.net/wiki/download/attachments/1/a.png", { signal: null }, origin).credentials,
-    "include",
+    "same-origin",
   );
-  assert.equal(withPageCredentials("/wiki/download/attachments/1/a.png", {}, origin).credentials, "include");
+  assert.equal(withPageCredentials("/wiki/download/attachments/1/a.png", {}, origin).credentials, "same-origin");
   // Cross-origin keeps the fetch default, so ACAO: * hosts still pass CORS
   assert.equal(withPageCredentials("https://img.shields.io/badge/x.svg", {}, origin).credentials, "same-origin");
-  assert.equal(withPageCredentials("https://github.com/a/b/raw/main/x.png", {}, "https://github.com").credentials, "include");
   assert.deepEqual(withPageCredentials("https://x.test/a.png", { signal: "s" }, origin), { signal: "s", credentials: "same-origin" });
+});
+
+test("withPageCredentials does not force cookies on github.com /raw/ images", () => {
+  // github.com/<owner>/<repo>/raw/<ref>/<path> redirects to
+  // raw.githubusercontent.com, which answers `Access-Control-Allow-Origin: *`.
+  // With "include" the browser rejects that wildcard after the redirect and the
+  // image is skipped; "same-origin" sends the cookie to github.com only.
+  const init = withPageCredentials("https://github.com/a/b/raw/main/x.png", {}, "https://github.com");
+  assert.equal(init.credentials, "same-origin");
 });

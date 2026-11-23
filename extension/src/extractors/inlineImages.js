@@ -48,6 +48,9 @@ export const inlineImages = async (bodyElement, options = {}) => {
     skipped: 0,
     bytes: 0,
     reasons: Object.fromEntries(SKIP_REASONS.map((reason) => [reason, 0])),
+    // Message of the first thrown fetch error among skipped images, so the
+    // reader can say more than "could not be fetched"
+    firstError: null,
   };
   // Bytes claimed by images in flight, so parallel fetches cannot overshoot
   // the total cap between them
@@ -80,8 +83,8 @@ export const inlineImages = async (bodyElement, options = {}) => {
         return { reason: "too-large" };
       }
       return { mime, bytes };
-    } catch {
-      return { reason: "fetch-failed" };
+    } catch (error) {
+      return { reason: "fetch-failed", error: String(error?.message || error || "unknown error") };
     } finally {
       if (timer) {
         clearTimeout(timer);
@@ -118,6 +121,11 @@ export const inlineImages = async (bodyElement, options = {}) => {
     }
 
     if (!result.bytes) {
+      // Keep the first thrown error of an image that stayed skipped, not one
+      // a fallback URL recovered from
+      if (result.error && stats.firstError === null) {
+        stats.firstError = result.error;
+      }
       skip(result.reason);
       return;
     }

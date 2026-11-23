@@ -23,7 +23,7 @@ const capturePage = async () => {
   const { kind, title, via } = extracted;
   const body = cleanExtracted(extracted, sourceUrl);
   const fetchImpl = createCaptureFetch({
-    pageFetch: (url, init) => fetch(url, withPageCredentials(url, init, location.origin)),
+    pageFetch: (url, init) => fetch(url, withPageCredentials(url, init)),
     sendMessage: (message) => chrome.runtime.sendMessage(message),
     maxBytes: DEFAULT_LIMITS.perImageBytes,
   });

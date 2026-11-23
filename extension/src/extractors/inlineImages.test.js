@@ -128,6 +128,37 @@ test("keeps the URL when the fetch fails or returns an error status", async () =
   assert.equal(stats.reasons["fetch-failed"], 2);
 });
 
+test("records the first thrown fetch error in firstError", async () => {
+  const body = bodyWith(['src="https://x.test/a.png"', 'src="https://x.test/b.png"']);
+  const fetchImpl = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+
+  const stats = await inlineImages(body, { fetchImpl });
+
+  assert.equal(stats.reasons["fetch-failed"], 2);
+  assert.equal(stats.firstError, "Failed to fetch");
+});
+
+test("leaves firstError null when a fallback URL recovers the image", async () => {
+  const body = bodyWith(['src="https://x.test/gone.png" data-fallback-src="https://x.test/ok.png"']);
+  const { fetchImpl } = fakeFetch({ "https://x.test/ok.png": () => response({}) });
+
+  const stats = await inlineImages(body, { fetchImpl });
+
+  assert.equal(stats.inlined, 1);
+  assert.equal(stats.firstError, null);
+});
+
+test("leaves firstError null when no fetch threw", async () => {
+  const body = bodyWith(['src="https://x.test/missing.png"']);
+  const { fetchImpl } = fakeFetch({ "https://x.test/missing.png": () => response({ status: 404 }) });
+
+  const stats = await inlineImages(body, { fetchImpl });
+
+  assert.equal(stats.firstError, null);
+});
+
 test("tries the camo fallback when the canonical URL fails", async () => {
   const body = bodyWith([
     'src="https://badge.test/b.svg" data-fallback-src="https://camo.githubusercontent.com/abc"',

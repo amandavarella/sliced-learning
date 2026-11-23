@@ -32,6 +32,16 @@ test("skippedImagesNote counts skips and lists the reasons", () => {
   assert.match(note.detail, /^2 could not be fetched; 1 was over the 2 MB per-image limit\./);
 });
 
+test("skippedImagesNote shows the first fetch error when there is one", () => {
+  const note = skippedImagesNote({
+    inlined: 0,
+    skipped: 9,
+    reasons: { "fetch-failed": 9, "not-image": 0, "too-large": 0, "total-cap": 0 },
+    firstError: "Failed to fetch",
+  });
+  assert.match(note.detail, /^9 could not be fetched \(first error: Failed to fetch\)\./);
+});
+
 test("formatBytes rounds to KB under a megabyte", () => {
   assert.equal(formatBytes(0), "0 KB");
   assert.equal(formatBytes(850 * 1024), "850 KB");

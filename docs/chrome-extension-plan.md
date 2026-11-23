@@ -10,6 +10,8 @@ All seven phases are implemented on the `chrome-extension` branch, one or two co
 - **Mermaid:** phase 5 shows diagram source as a code block plus a link (open question 5). Confirm that is the choice she wants.
 - **A real toolbar click** (phase 7): every browser test drives the click from the service worker with an extra host permission, so the `activeTab` path, the reader tab reload on a second click, and the toolbar icon at 16 px on light and dark toolbars are unchecked.
 
+**Bug fixed after the first private repo test:** a private GitHub README skipped all 9 images as `fetch-failed`. The page fetch sent `credentials: "include"` to github.com `/raw/` URLs, which redirect to raw.githubusercontent.com, and that host answers `Access-Control-Allow-Origin: *`, which the browser rejects on a credentialed request. Page image fetches now always use `credentials: "same-origin"`, which still sends the github.com cookie on the first hop, and the "Images skipped" tooltip now shows the first fetch error (`stats.firstError`).
+
 ## Why
 
 The server fetches URLs with axios and no cookies, so pages behind GitHub SSO or Atlassian login return a sign-in page. A Chrome extension runs inside the logged-in tab, reads the rendered page, slices it locally and keeps the text in the browser. Company content never reaches the server.

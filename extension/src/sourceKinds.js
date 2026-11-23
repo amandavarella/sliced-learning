@@ -65,7 +65,10 @@ export const skippedImagesNote = (stats) => {
   }
   const detail = Object.entries(stats.reasons || {})
     .filter(([, count]) => count > 0)
-    .map(([reason, count]) => `${count} ${REASON_LABELS[reason]?.(count) || reason}`)
+    .map(([reason, count]) => {
+      const label = `${count} ${REASON_LABELS[reason]?.(count) || reason}`;
+      return reason === "fetch-failed" && stats.firstError ? `${label} (first error: ${stats.firstError})` : label;
+    })
     .join("; ");
   return {
     id: "images-skipped",
