@@ -136,6 +136,18 @@ const ReaderSettings = ({ settings, onChange, showTypography = true }) => {
                   </button>
                 </div>
               </fieldset>
+
+              <fieldset className="reader-settings-group">
+                <legend>Margins</legend>
+                <button
+                  type="button"
+                  className="reader-settings-reset"
+                  disabled={!settings.margins}
+                  onClick={() => onChange({ margins: null })}
+                >
+                  Reset margins
+                </button>
+              </fieldset>
             </>
           )}
         </div>

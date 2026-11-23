@@ -11,6 +11,9 @@ const DEFAULT_SETTINGS = {
   theme: "system",
   font: "sans",
   size: 1,
+  // Pixel distances from the content area's inner edges to the reading card,
+  // or null for the default centred layout
+  margins: null,
 };
 
 const THEME_COLORS = {
@@ -19,6 +22,13 @@ const THEME_COLORS = {
   dark: "#0f0d16",
 };
 
+const isMargin = (value) => Number.isInteger(value) && value >= 0;
+
+const sanitizeMargins = (margins) =>
+  margins && isMargin(margins.left) && isMargin(margins.right)
+    ? { left: margins.left, right: margins.right }
+    : null;
+
 const sanitize = (value = {}) => ({
   theme: THEMES.includes(value.theme) ? value.theme : DEFAULT_SETTINGS.theme,
   font: READING_FONTS.includes(value.font) ? value.font : DEFAULT_SETTINGS.font,
@@ -26,6 +36,7 @@ const sanitize = (value = {}) => ({
     Number.isInteger(value.size) && value.size >= 0 && value.size < TEXT_SIZES.length
       ? value.size
       : DEFAULT_SETTINGS.size,
+  margins: sanitizeMargins(value.margins),
 });
 
 const readSettings = () => {
@@ -65,7 +76,8 @@ const applySettings = ({ theme, font, size }) => {
 };
 
 /**
- * Reader display preferences (theme, reading font, text size), persisted per device.
+ * Reader display preferences (theme, reading font, text size, reading margins),
+ * persisted per device.
  */
 export const useReaderSettings = () => {
   const [settings, setSettings] = useState(readSettings);
